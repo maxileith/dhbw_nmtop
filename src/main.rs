@@ -1,8 +1,6 @@
 use std::fs::File;
-use std::io;
 use std::io::{BufRead, BufReader};
 use std::vec::Vec;
-use std::{thread, time};
 
 
 /// Represents a result row of the /proc/stat content
@@ -33,50 +31,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     //for x in 0..11{
         let file = File::open(proc_stat)?;
         let reader = BufReader::new(file);
-        let mut keyword_active = false;
+        
         let mut stats: Vec<ProcStatRow> = Vec::new();
-
-        let mut reading_mode = ReadingMode::CpuName;
-        let mut previous_index = 0;
-        let mut found_number = false;
+        let mut reading_mode;
         
         for line in reader.lines() {
             let row = line?;
             if row.starts_with("cpu") {
-                previous_index = 0;
                 reading_mode = ReadingMode::CpuName;
 
-                //let mut stat: ProcStatRow;
                 let mut current_cpu_name: &str = "";
                 let mut values: [u32; 10] = [0; 10];
                 let mut field_counter = 0;
-
-                for (i, c) in row.chars().enumerate() {
-                    if reading_mode == ReadingMode::CpuName {
-                        if c.is_whitespace() {
-                            current_cpu_name = &row[..i];
-                            previous_index = i;
+            
+                for z in row.split_whitespace() {
+                    match reading_mode {
+                        ReadingMode::CpuName => {
+                            current_cpu_name = z;
                             reading_mode = ReadingMode::CpuValue;
-                        }
-                    } else if reading_mode == ReadingMode::CpuValue {
-                        // Reading a number
-                        if c.is_digit(32) {
-                            found_number = true;
-                        }
-                        if found_number && (!c.is_digit(32) || i == row.chars().count() - 1) {
-                            //println!("--{}--", &row[previous_index..i].trim());
-                            let number: u32 = match (&row[previous_index..i]).trim().parse() {
+                        },
+
+                        ReadingMode::CpuValue=> {
+                            let number: u32 = match z.trim().parse() {
                                 Err(_) => 0,
                                 Ok(n) => n,
                             };
-                            values[field_counter] = number;
-                            
-                            found_number = false;
-                            previous_index = i;
 
-                            // Found new field
+                            values[field_counter] = number;
                             field_counter += 1;
-                        }
+                        },
                     }
                 }
 
