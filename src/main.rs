@@ -1,7 +1,8 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::vec::Vec;
-use std::{time, thread};
+use std::collections::VecDeque;
+use std::{thread, time};
 
 /// Represents a result row of the /proc/stat content
 /// Time units are in USER_HZ or Jiffies
@@ -37,6 +38,7 @@ enum ReadingMode {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let proc_stat = "/proc/stat";
+    /*
     let mut previous_stat = ProcStatRow {
         cpu_name: "cpu".to_string(), // ugly, should find better way
         softirq: 0,
@@ -46,13 +48,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         system_proc_kernel_mode: 0,
         nice_proc_user_mode: 0,
         normal_proc_user_mode: 0,
-    };
-
+    };*/
+    let mut stats: VecDeque<ProcStatRow> = VecDeque::new(); // create with fixed size
+    let mut iteration_count = 0;
     loop {
         let file = File::open(proc_stat)?;
         let reader = BufReader::new(file);
 
-        let mut stats: Vec<ProcStatRow> = Vec::new();
         let mut reading_mode;
 
         for line in reader.lines() {
@@ -82,45 +84,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 }
-                
-                if current_cpu_name == "cpu" {
-                    let current_stat = ProcStatRow {
-                        cpu_name: current_cpu_name.to_string(), // ugly, should find better way
-                        softirq: values[6],
-                        irq: values[5],
-                        iowait: values[4],
-                        idle: values[3],
-                        system_proc_kernel_mode: values[2],
-                        nice_proc_user_mode: values[1],
-                        normal_proc_user_mode: values[0],
-                    };
 
-                    println!("CPU Utilization {}%",calculate_cpu_utilization(&previous_stat, &current_stat));
-                    previous_stat = current_stat;
+                let current_stat = ProcStatRow {
+                    cpu_name: current_cpu_name.to_string(), // ugly, should find better way
+                    softirq: values[6],
+                    irq: values[5],
+                    iowait: values[4],
+                    idle: values[3],
+                    system_proc_kernel_mode: values[2],
+                    nice_proc_user_mode: values[1],
+                    normal_proc_user_mode: values[0],
+                };
+            
+                
+                if iteration_count > 0 {
+                    //println!("{}", current_stat.cpu_name);
+                    let previous_stat = match stats.pop_front() {
+                        Some(x) => x,
+                        None => {
+                            break;
+                        },
+                    };
+                    //println!("{}", previous_stat.cpu_name);
+                    println!(
+                        "{} Utilization {}%",
+                        current_cpu_name,
+                        calculate_cpu_utilization(&previous_stat, &current_stat)
+                    );
                 }
-                // Create struct from numbers
+                stats.push_back(current_stat);
             }
         }
         let dur = time::Duration::from_millis(100);
         thread::sleep(dur);
-    }
-    /*
-    for a in stats {
-        calculate_cpu_utilization(&a, &a);
-        println!(
-            "cpu_name {}, normal {}, nice {}, system {}, idle {}, iowait {}, irq {}, softirq {}",
-            a.cpu_name,
-            a.normal_proc_user_mode,
-            a.nice_proc_user_mode,
-            a.system_proc_kernel_mode,
-            a.idle,
-            a.iowait,
-            a.irq,
-            a.softirq
-        );
-    }*/
 
-    //}
+        iteration_count += 1;
+    }
+
     Ok(())
 }
 
