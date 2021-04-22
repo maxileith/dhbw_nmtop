@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::vec::Vec;
+//use std::vec::Vec;
 use std::collections::VecDeque;
 use std::{thread, time};
 
@@ -115,13 +115,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 stats.push_back(current_stat);
             }
         }
-        let dur = time::Duration::from_millis(100);
+        show_ram_usage();
+        let dur = time::Duration::from_millis(1000);
         thread::sleep(dur);
 
         iteration_count += 1;
     }
 
-    Ok(())
+   //Ok(())
 }
 
 fn calculate_cpu_utilization(previous: &ProcStatRow, current: &ProcStatRow) -> f32 {
@@ -132,4 +133,29 @@ fn calculate_cpu_utilization(previous: &ProcStatRow, current: &ProcStatRow) -> f
     let idle_delta = (current.idle - previous.idle) as f32;
     let utilization: f32 = 100.0 * (1.0 - idle_delta / total_delta);
     utilization
+}
+
+fn show_ram_usage() -> Result<(), Box<dyn std::error::Error>> {
+    let meminfo = "/proc/meminfo";
+
+    let file = File::open(meminfo)?;
+    let reader = BufReader::new(file);
+
+    for line in reader.lines() {
+        let row = line?;
+        
+        if row.starts_with("Mem") || row.starts_with("Swap") {
+            let mut row_values = row.split_whitespace();
+            match row_values.next() {
+                Some(x) => print!("{}\t", x),
+                None => break
+            }
+            match row_values.next() {
+                Some(x) => println!("{:>8} kB", x),
+                None => break
+            }
+        }
+    }
+
+    Ok(())
 }
