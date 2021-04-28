@@ -1,8 +1,15 @@
 use std::fs::File;
+use std::io;
 use std::io::{BufRead, BufReader};
+use termion::raw::IntoRawMode;
+use tui::backend::TermionBackend;
+use tui::layout::{Constraint, Direction, Layout};
+use tui::style::{Color, Modifier, Style};
+use tui::widgets::{Block, Borders, Gauge, Widget};
+use tui::Terminal;
+use std::{thread, time};
 //use std::vec::Vec;
 use std::collections::VecDeque;
-use std::{thread, time};
 
 /// Represents a result row of the /proc/stat content
 /// Time units are in USER_HZ or Jiffies
@@ -36,6 +43,16 @@ enum ReadingMode {
     CpuValue,
 }
 
+#[derive(Default, Debug)]
+struct MemInfo {
+    pub mem_total: f64,
+    pub mem_free: f64,
+    pub mem_available: f64,
+    pub swap_total: f64,
+    pub swap_free: f64,
+    pub swap_cached: f64,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let proc_stat = "/proc/stat";
     /*
@@ -51,6 +68,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };*/
     let mut stats: VecDeque<ProcStatRow> = VecDeque::new(); // create with fixed size
     let mut iteration_count = 0;
+    let stdout = io::stdout().into_raw_mode()?;
+    let backend = TermionBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+    let mut mem_info: MemInfo = Default::default();
+    let sleep_duration = time::Duration::from_millis(100);
+
+    terminal.clear()?;
     loop {
         let file = File::open(proc_stat)?;
         let reader = BufReader::new(file);
@@ -106,16 +130,81 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         },
                     };
                     //println!("{}", previous_stat.cpu_name);
-                    println!(
+                    /*println!(
                         "{} Utilization {}%",
                         current_cpu_name,
                         calculate_cpu_utilization(&previous_stat, &current_stat)
-                    );
+                    );*/
                 }
                 stats.push_back(current_stat);
             }
         }
-        show_ram_usage();
+
+        let _ = show_ram_usage(&mut mem_info);
+
+        let _ = terminal.draw(|f| {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .margin(1)
+                .constraints(
+                    [
+                        Constraint::Length(6),
+                        Constraint::Min(8),
+                        Constraint::Length(6),
+                    ]
+                    .as_ref(),
+                )
+                .split(f.size());
+            let boxes = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(
+                [
+                    Constraint::Percentage(50),
+                    Constraint::Percentage(50),
+                ]
+                .as_ref(),
+            )
+            .split(chunks[0]);
+            let block_chunks = Layout::default()
+                .constraints([Constraint::Length(2), Constraint::Length(2)])
+                .margin(1)
+                .split(boxes[0]);
+
+            let block = Block::default().title("Mem").borders(Borders::ALL);
+            f.render_widget(block, boxes[0]);
+            let block1 = Block::default().title("Block 2").borders(Borders::ALL);
+            f.render_widget(block1, chunks[1]);
+            let block2 = Block::default().title("Block2").borders(Borders::ALL);
+            f.render_widget(block2, chunks[2]);
+            // calc mem infos
+            let mem_usage = (mem_info.mem_total - mem_info.mem_available) / mem_info.mem_total;
+            let mem_swap = mem_info.swap_cached / mem_info.swap_total;
+            let label_mem = format!("{:.2}%", mem_usage * 100.0);
+            let gauge_mem = Gauge::default()
+                .block(Block::default().title("Mem:"))
+                .gauge_style(
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .bg(Color::Black)
+                        .add_modifier(Modifier::ITALIC | Modifier::BOLD),
+                )
+                .label(label_mem)
+                .ratio(mem_usage);
+            f.render_widget(gauge_mem, block_chunks[0]);
+            let label_swap = format!("{:.2}%", mem_swap * 100.0);
+            let gauge_swap = Gauge::default()
+                .block(Block::default().title("Swap:"))
+                .gauge_style(
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .bg(Color::Black)
+                        .add_modifier(Modifier::ITALIC | Modifier::BOLD),
+                )
+                .label(label_swap)
+                .ratio(mem_swap);
+            f.render_widget(gauge_swap, block_chunks[1]);
+        });
+
         let dur = time::Duration::from_millis(1000);
         thread::sleep(dur);
 
@@ -135,27 +224,47 @@ fn calculate_cpu_utilization(previous: &ProcStatRow, current: &ProcStatRow) -> f
     utilization
 }
 
-fn show_ram_usage() -> Result<(), Box<dyn std::error::Error>> {
+fn show_ram_usage(mem_info: &mut MemInfo) -> Result<(), Box<dyn std::error::Error>> {
     let meminfo = "/proc/meminfo";
 
     let file = File::open(meminfo)?;
     let reader = BufReader::new(file);
+    let mut mem_numbers: [String; 6] = [
+        String::from("0"),
+        String::from("0"),
+        String::from("0"),
+        String::from("0"),
+        String::from("0"),
+        String::from("0"),
+    ];
+    let mut count = 0;
 
     for line in reader.lines() {
-        let row = line?;
-        
+        let row = match line {
+            Ok(x) => x,
+            Err(_) => break,
+        };
         if row.starts_with("Mem") || row.starts_with("Swap") {
             let mut row_values = row.split_whitespace();
+
+            row_values.next();
             match row_values.next() {
-                Some(x) => print!("{}\t", x),
-                None => break
+                Some(x) => mem_numbers[count] = x.to_string(),
+                None => break,
             }
-            match row_values.next() {
-                Some(x) => println!("{:>8} kB", x),
-                None => break
-            }
+
+            count += 1;
         }
     }
+
+    mem_info.mem_total = mem_numbers[0].parse().unwrap();
+    mem_info.mem_free = mem_numbers[1].parse().unwrap();
+    mem_info.mem_available = mem_numbers[2].parse().unwrap();
+    mem_info.swap_cached = mem_numbers[3].parse().unwrap();
+    mem_info.swap_total = mem_numbers[4].parse().unwrap();
+    mem_info.swap_free = mem_numbers[5].parse().unwrap();
+
+    //println!("{:?}", mem_info);
 
     Ok(())
 }
