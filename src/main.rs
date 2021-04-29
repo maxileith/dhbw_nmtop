@@ -16,6 +16,8 @@ use tui::{
 };
 mod util;
 use util::InputEvent;
+use std::process::Command;
+use std::str;
 
 /// Represents a result row of the /proc/stat content
 /// Time units are in USER_HZ or Jiffies
@@ -98,7 +100,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .as_ref(),
                 )
                 .split(f.size());
-            let boxes = Layout::default()
+            let upper_boxes = Layout::default()
             .direction(Direction::Horizontal)
             .constraints(
                 [
@@ -111,13 +113,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let block_chunks = Layout::default()
                 .constraints([Constraint::Length(2), Constraint::Length(2)])
                 .margin(1)
-                .split(boxes[0]);
+                .split(upper_boxes[0]);
 
-            let block = Block::default().title("Mem").borders(Borders::ALL);
-            f.render_widget(block, boxes[0]);
+            let mem_block = Block::default().title(" Mem ").borders(Borders::ALL);
+            f.render_widget(mem_block, upper_boxes[0]);
+            let disk_block = Block::default().title(" Disks ").borders(Borders::ALL);
+            f.render_widget(disk_block, upper_boxes[1]);
             let block1 = Block::default().title("Block 2").borders(Borders::ALL);
             f.render_widget(block1, chunks[1]);
-            let block2 = Block::default().title("Block2").borders(Borders::ALL);
+            let block2 = Block::default().title("Block 3").borders(Borders::ALL);
             f.render_widget(block2, chunks[2]);
             // calc mem infos
             let mem_usage = (mem_info.mem_total - mem_info.mem_available) / mem_info.mem_total;
@@ -154,12 +158,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(InputEvent::Input(input)) => { match input {
                 Key::Ctrl('c') => {
                     terminal.clear()?;
+                    get_disks_usage();
                     break;
                 },
                 _ => {},
             }},
             Err(_) => {},
         }
+
 
         // Sleep
         thread::sleep(sleep_duration);
@@ -327,4 +333,56 @@ fn show_ram_usage(mem_info: &mut MemInfo) -> Result<(), Box<dyn std::error::Erro
     //println!("{:?}", mem_info);
 
     Ok(())
+}
+
+// equals the "df"-command output
+#[derive(Debug)]
+struct DiskInfo {
+    pub filesystem: String,
+    pub used: u32,
+    pub available: u32,
+    pub used_percentage: String,
+    pub mountpoint: String,
+}
+
+fn get_disks_usage() -> Vec<DiskInfo> {
+    let mut disk_array = Vec::new();
+    // execute "df"
+    let mut df_command = Command::new("df");
+    let df_output = match df_command.output() {
+        Ok(x) => x,
+        _ => panic!("Could not read df output"),
+    };
+
+    // parse string from utf8 Vec
+    let df_output_string = match str::from_utf8(&df_output.stdout) {
+        Ok(v) => v,
+        Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
+    };
+
+    // add disks to array
+    for line in df_output_string.lines() {
+        //println!("{}", line.starts_with("/dev/"));
+
+        if line.starts_with("/dev/") {
+            let mut sliced_line = line.split_whitespace();
+            let mut disk_info = DiskInfo {
+                filesystem : sliced_line.next().unwrap().replace("/dev", "").to_string(),
+                used: 0,
+                available: 0,
+                used_percentage: String::from(""),
+                mountpoint: String::from(""),
+            };
+            sliced_line.next();
+            disk_info.used = sliced_line.next().unwrap().parse().unwrap();
+            disk_info.available = sliced_line.next().unwrap().parse().unwrap();
+            disk_info.used_percentage = sliced_line.next().unwrap().to_string();
+            disk_info.mountpoint = sliced_line.next().unwrap().to_string();
+
+            disk_array.push(disk_info);
+        }
+    }
+    //println!("{:?}", disk_array);
+
+    disk_array
 }
