@@ -74,9 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Terminal initialization
     let stdout = io::stdout().into_raw_mode()?;
     let backend = TermionBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-    terminal.clear();
-    
+    let mut terminal = Terminal::new(backend)?;    
     let input_handler = util::InputHandler::new();
 
     //let data_collector_handle = init_data_collection();
@@ -151,15 +149,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
 
         // Handle events
-        if let InputEvent::Input(input) = input_handler.next()? {
-            match input {
+
+        match input_handler.next() {
+            Ok(InputEvent::Input(input)) => { match input {
                 Key::Ctrl('c') => {
-                    terminal.clear();
+                    terminal.clear()?;
                     break;
                 },
                 _ => {},
-            };
-        };
+            }},
+            Err(_) => {},
+        }
 
         // Sleep
         thread::sleep(sleep_duration);

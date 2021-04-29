@@ -35,7 +35,7 @@ impl InputHandler {
         }
     }
 
-    pub fn next(&self) -> Result<InputEvent<Key>, mpsc::RecvError> {
-        self.rx.recv()
+    pub fn next(&self) -> Result<InputEvent<Key>, mpsc::TryRecvError> {
+        self.rx.try_recv()
     }
 }
