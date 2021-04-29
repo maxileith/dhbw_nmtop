@@ -11,7 +11,6 @@ pub enum InputEvent<I> {
 
 pub struct InputHandler {
     rx: mpsc::Receiver<InputEvent<Key>>,
-    input_handle: thread::JoinHandle<()>,
 }
 
 impl InputHandler {
@@ -31,11 +30,10 @@ impl InputHandler {
         };
         InputHandler {
             rx: rx,
-            input_handle: input_handle,
         }
     }
 
-    pub fn next(&self) -> Result<InputEvent<Key>, mpsc::RecvError> {
-        self.rx.recv()
+    pub fn next(&self) -> Result<InputEvent<Key>, mpsc::TryRecvError> {
+        self.rx.try_recv() 
     }
 }
