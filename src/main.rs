@@ -1,135 +1,222 @@
-use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io;
 use std::vec::Vec;
-use std::collections::VecDeque;
 use std::{thread, time};
+use termion::{event::Key, raw::IntoRawMode};
+use tui::{
+    backend::{Backend, TermionBackend},
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    terminal::Frame,
+    text::Span,
+    symbols,
+    widgets::{Axis, Block, Borders, Chart, Gauge, Dataset, GraphType},
+    Terminal,
+};
 
-/// Represents a result row of the /proc/stat content
-/// Time units are in USER_HZ or Jiffies
-#[derive(Clone)]
-struct ProcStatRow {
-    pub cpu_name: String,
-    pub normal_proc_user_mode: u32,
-    pub nice_proc_user_mode: u32,
-    pub system_proc_kernel_mode: u32,
-    pub idle: u32,
-    pub iowait: u32,  // waiting for I/O
-    pub irq: u32,     // servicing interupts
-    pub softirq: u32, // servicing softirqs
-}
+mod util;
+use util::InputEvent;
 
-impl ProcStatRow {
-    fn get_total_time(&self) -> u32 {
-        self.normal_proc_user_mode
-            + self.nice_proc_user_mode
-            + self.system_proc_kernel_mode
-            + self.idle
-            + self.iowait
-            + self.irq
-            + self.softirq
-    }
-}
+// Module for reading CPU usage data
+mod cpu;
 
-#[derive(PartialEq)]
-enum ReadingMode {
-    CpuName,
-    CpuValue,
-}
+// Module for reading memory usage data
+mod mem;
+use mem::MemInfo;
 
+// TODO: user input to stop execution
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let proc_stat = "/proc/stat";
-    /*
-    let mut previous_stat = ProcStatRow {
-        cpu_name: "cpu".to_string(), // ugly, should find better way
-        softirq: 0,
-        irq: 0,
-        iowait: 0,
-        idle: 0,
-        system_proc_kernel_mode: 0,
-        nice_proc_user_mode: 0,
-        normal_proc_user_mode: 0,
-    };*/
-    let mut stats: VecDeque<ProcStatRow> = VecDeque::new(); // create with fixed size
-    let mut iteration_count = 0;
+    // Terminal initialization
+    let stdout = io::stdout().into_raw_mode()?;
+    let backend = TermionBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    // Initialize input handler
+    let input_handler = util::InputHandler::new();
+
+    let cpu_dc_thread = cpu::init_data_collection_thread();
+    let mem_dc_thread = mem::init_data_collection_thread();
+
+    let sleep_duration = time::Duration::from_millis(100);
+
+    let mut core_values = Vec::<Vec<f64>>::new();
+    let mut cpu_values = Vec::<f64>::new();
+
+    //let mut cpu_values = Vec::<f64>::new();
+    terminal.clear()?;
+    
     loop {
-        let file = File::open(proc_stat)?;
-        let reader = BufReader::new(file);
+        let mem_info = match mem_dc_thread.try_recv() {
+            Ok(a) => a,
+            Err(_) => Default::default(),
+        };
 
-        let mut reading_mode;
-
-        for line in reader.lines() {
-            let row = line?;
-            if row.starts_with("cpu") {
-                reading_mode = ReadingMode::CpuName;
-
-                let mut current_cpu_name: &str = "";
-                let mut values: [u32; 10] = [0; 10];
-                let mut field_counter = 0;
-
-                for z in row.split_whitespace() {
-                    match reading_mode {
-                        ReadingMode::CpuName => {
-                            current_cpu_name = z;
-                            reading_mode = ReadingMode::CpuValue;
-                        }
-
-                        ReadingMode::CpuValue => {
-                            let number: u32 = match z.trim().parse() {
-                                Err(_) => 0,
-                                Ok(n) => n,
-                            };
-
-                            values[field_counter] = number;
-                            field_counter += 1;
-                        }
-                    }
+        // Recv data from the data collector thread
+        let cpu_stats = match cpu_dc_thread.try_recv() {
+            Ok(a) => a,
+            Err(_) => vec![],
+        };
+        // create cpu info
+        let mut counter = 0;
+        for b in cpu_stats {
+            if b.cpu_name == "cpu"{
+                if cpu_values.len() == 300{
+                   cpu_values.remove(0);
+                } 
+                cpu_values.push(b.utilization);
+            }else {
+                if core_values.len() > counter {
+                    if core_values[counter].len() == 300{
+                       core_values[counter].remove(0);
+                    } 
+                    core_values[counter].push(b.utilization);
+                } else {
+                    core_values.push(Vec::new());
+                    core_values[counter].push(b.utilization);
                 }
-
-                let current_stat = ProcStatRow {
-                    cpu_name: current_cpu_name.to_string(), // ugly, should find better way
-                    softirq: values[6],
-                    irq: values[5],
-                    iowait: values[4],
-                    idle: values[3],
-                    system_proc_kernel_mode: values[2],
-                    nice_proc_user_mode: values[1],
-                    normal_proc_user_mode: values[0],
-                };
-            
-                
-                if iteration_count > 0 {
-                    //println!("{}", current_stat.cpu_name);
-                    let previous_stat = match stats.pop_front() {
-                        Some(x) => x,
-                        None => {
-                            break;
-                        },
-                    };
-                    //println!("{}", previous_stat.cpu_name);
-                    println!(
-                        "{} Utilization {}%",
-                        current_cpu_name,
-                        calculate_cpu_utilization(&previous_stat, &current_stat)
-                    );
-                }
-                stats.push_back(current_stat);
+                counter += 1
             }
         }
-        let dur = time::Duration::from_millis(100);
-        thread::sleep(dur);
 
-        iteration_count += 1;
+        terminal.draw(|f| {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .margin(1)
+                .constraints(
+                    [
+                        Constraint::Length(6),
+                        Constraint::Min(8),
+                        Constraint::Length(6),
+                    ]
+                    .as_ref(),
+                )
+                .split(f.size());
+            let block1 = Block::default().title("Block 2").borders(Borders::ALL);
+            f.render_widget(block1, chunks[1]);
+            let block2 = Block::default().title("Block2").borders(Borders::ALL);
+            f.render_widget(block2, chunks[2]);
+
+            draw_meminfo(f, chunks[0], &mem_info);
+            draw_cpuinfo(f, chunks[1], &cpu_values, &core_values);
+        })?;
+
+        // Handle events
+        match input_handler.next() {
+            Ok(InputEvent::Input(input)) => {
+                match input {
+                    Key::Ctrl('c') => {
+                        terminal.clear()?;
+                        break;
+                    }
+                    _ => {}
+                };
+            }
+            Err(_) => {}
+        }
+
+        // Sleep
+        thread::sleep(sleep_duration);
     }
-
     Ok(())
 }
 
-fn calculate_cpu_utilization(previous: &ProcStatRow, current: &ProcStatRow) -> f32 {
-    let previous_total_elapsed = previous.get_total_time();
-    let current_total_elapsed = current.get_total_time();
+fn draw_meminfo<B: Backend>(f: &mut Frame<B>, rect: Rect, mem_info: &MemInfo) {
+    let boxes = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+        .split(rect);
+    let block_chunks = Layout::default()
+        .constraints([Constraint::Length(2), Constraint::Length(2)])
+        .margin(1)
+        .split(boxes[0]);
 
-    let total_delta = (current_total_elapsed - previous_total_elapsed) as f32;
-    let idle_delta = (current.idle - previous.idle) as f32;
-    let utilization: f32 = 100.0 * (1.0 - idle_delta / total_delta);
-    utilization
+    let block = Block::default().title("Mem").borders(Borders::ALL);
+    f.render_widget(block, boxes[0]);
+
+    // calc mem infos
+    let mem_usage = (mem_info.mem_total - mem_info.mem_available) / mem_info.mem_total;
+    let mem_swap = mem_info.swap_cached / mem_info.swap_total;
+    let label_mem = format!("{:.2}%", mem_usage * 100.0);
+
+    if 0.0 <= mem_usage && mem_usage <= 1.0 {
+        let gauge_mem = Gauge::default()
+            .block(Block::default().title("Mem:"))
+            .gauge_style(
+                Style::default()
+                    .fg(Color::Magenta)
+                    .bg(Color::Black)
+                    .add_modifier(Modifier::ITALIC | Modifier::BOLD),
+            )
+            .label(label_mem)
+            .ratio(mem_usage);
+        f.render_widget(gauge_mem, block_chunks[0]);
+    }
+
+    let label_swap = format!("{:.2}%", mem_swap * 100.0);
+
+    if 0.0 <= mem_swap && mem_swap <= 1.0 {
+        let gauge_swap = Gauge::default()
+            .block(Block::default().title("Swap:"))
+            .gauge_style(
+                Style::default()
+                    .fg(Color::Magenta)
+                    .bg(Color::Black)
+                    .add_modifier(Modifier::ITALIC | Modifier::BOLD),
+            )
+            .label(label_swap)
+            .ratio(mem_swap);
+        f.render_widget(gauge_swap, block_chunks[1]);
+    }
+}
+
+
+fn draw_cpuinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, data: &Vec<f64>, cores: &Vec<Vec<f64>>) {
+    let v = data.iter().enumerate().map(|(i, &x)| (i as f64, x)).collect::<Vec<_>>();
+
+    let mut datasets = vec![
+        Dataset::default()
+            .name("cpu")
+            .marker(symbols::Marker::Dot)
+            .style(Style::default().fg(Color::Cyan))
+            .graph_type(GraphType::Line)
+            .data(&v),
+    ];
+
+    let mut core_values = Vec::new();
+    for core in cores {
+        let value = core.iter().enumerate().map(|(i, &x)| (i as f64, x)).collect::<Vec<_>>();
+        core_values.push(value);
+    }
+
+    for i in 0..core_values.len() {
+        datasets.push(Dataset::default()
+            .name(format!("cpu{}", i))
+            .marker(symbols::Marker::Dot)
+            .style(Style::default().fg(Color::Indexed(i as u8)))
+            .graph_type(GraphType::Line)
+            .data(&core_values[i]));
+    }
+
+    let chart = Chart::new(datasets)
+        .block(
+            Block::default()
+                .title(Span::styled(
+                    "CPU",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ))
+                .borders(Borders::ALL),
+        )
+        .x_axis(Axis::default().bounds([0.0, 300.0]))
+        .y_axis(
+            Axis::default()
+                .style(Style::default().fg(Color::Gray))
+                .labels(vec![
+                    Span::styled("0", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::styled("100", Style::default().add_modifier(Modifier::BOLD)),
+                ])
+                .bounds([0.0, 100.0]),
+        );
+
+    f.render_widget(chart, rect);
 }
