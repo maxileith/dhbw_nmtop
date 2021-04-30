@@ -170,31 +170,36 @@ fn draw_meminfo<B: Backend>(f: &mut Frame<B>, rect: Rect, mem_info: &MemInfo) {
 
 
 fn draw_cpuinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, data: &Vec<f64>, cores: &Vec<Vec<f64>>) {
-    let v = data.iter().enumerate().map(|(i, &x)| (i as f64, x)).collect::<Vec<_>>();
-
-    let mut datasets = vec![
-        Dataset::default()
-            .name("cpu")
-            .marker(symbols::Marker::Dot)
-            .style(Style::default().fg(Color::Cyan))
-            .graph_type(GraphType::Line)
-            .data(&v),
-    ];
+    let mut datasets = Vec::new();
 
     let mut core_values = Vec::new();
     for core in cores {
-        let value = core.iter().enumerate().map(|(i, &x)| (i as f64, x)).collect::<Vec<_>>();
+        let value = core.iter().enumerate().map(|(i, &x)| ((i as f64), x)).collect::<Vec<_>>();
         core_values.push(value);
     }
+    let l = core_values.len();
 
-    for i in 0..core_values.len() {
+    for i in 0..l {
+        let f = i as f64 /l as f64;
+        let r:u8 = (f * 255.0).round() as u8;
+        let g:u8 = (f * 255.0).round() as u8;
+        let b:u8 = (f * 255.0).round() as u8;
+
         datasets.push(Dataset::default()
             .name(format!("cpu{}", i))
-            .marker(symbols::Marker::Dot)
-            .style(Style::default().fg(Color::Indexed(i as u8)))
+            .marker(symbols::Marker::Braille)
+            .style(Style::default().fg(Color::Rgb(r,g,b)))
             .graph_type(GraphType::Line)
             .data(&core_values[i]));
     }
+    
+    let v = data.iter().enumerate().map(|(i, &x)| ((i as f64), x)).collect::<Vec<_>>();
+    datasets.push(Dataset::default()
+            .name("cpu")
+            .marker(symbols::Marker::Braille)
+            .style(Style::default().fg(Color::Cyan))
+            .graph_type(GraphType::Line)
+            .data(&v));
 
     let chart = Chart::new(datasets)
         .block(
