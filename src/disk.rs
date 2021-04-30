@@ -8,8 +8,9 @@ use std::str;
 #[derive(Debug)]
 pub struct DiskInfo {
     pub filesystem: String,
-    pub used: u32,
-    pub available: u32,
+    pub total: u64,
+    pub used: u64,
+    pub available: u64,
     pub used_percentage: String,
     pub mountpoint: String,
 }
@@ -35,18 +36,14 @@ pub fn get_disks_usage() -> Vec<DiskInfo> {
 
         if line.starts_with("/dev/") {
             let mut sliced_line = line.split_whitespace();
-            let mut disk_info = DiskInfo {
+            let disk_info = DiskInfo {
                 filesystem : sliced_line.next().unwrap().replace("/dev", "").to_string(),
-                used: 0,
-                available: 0,
-                used_percentage: String::from(""),
-                mountpoint: String::from(""),
+                total: sliced_line.next().unwrap().parse().unwrap(),
+                used: sliced_line.next().unwrap().parse().unwrap(),
+                available: sliced_line.next().unwrap().parse().unwrap(),
+                used_percentage: sliced_line.next().unwrap().to_string(),
+                mountpoint: sliced_line.next().unwrap().to_string(),
             };
-            sliced_line.next();
-            disk_info.used = sliced_line.next().unwrap().parse().unwrap();
-            disk_info.available = sliced_line.next().unwrap().parse().unwrap();
-            disk_info.used_percentage = sliced_line.next().unwrap().to_string();
-            disk_info.mountpoint = sliced_line.next().unwrap().to_string();
 
             disk_array.push(disk_info);
         }
