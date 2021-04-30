@@ -69,3 +69,30 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<Vec<DiskInfo>> {
 
   rx
 }
+
+const SIZES: [&str;4] = ["K", "M", "G", "T"];
+
+pub fn calc_disk_size(disk_size : u64) -> String {
+    let mut count = 0;
+
+    if disk_size == 0 {
+        return "0".to_string()
+    }
+
+    let mut size = disk_size as f64;
+    size *= 1.024;
+
+    while size > 1000.0 {
+        size = size / 1000.0;
+        count += 1
+    }
+
+    let size_string: String = format!("{:.1}", size);
+    /*if size > 10.0 {
+        size_string = format!("{:.0}", size);
+    } else {
+        size_string = format!("{:.1}", size);
+    }*/
+
+    size_string + SIZES[count]
+}
