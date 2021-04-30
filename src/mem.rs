@@ -6,12 +6,12 @@ use std::sync::mpsc;
 
 #[derive(Default, Debug)]
 pub struct MemInfo {
-    pub mem_total: f64,
-    pub mem_free: f64,
-    pub mem_available: f64,
-    pub swap_total: f64,
-    pub swap_free: f64,
-    pub swap_cached: f64,
+    pub mem_total: u32,
+    pub mem_free: u32,
+    pub mem_available: u32,
+    pub swap_total: u32,
+    pub swap_free: u32,
+    pub swap_cached: u32,
 }
 
 pub fn show_ram_usage() -> Result<MemInfo, Box<dyn std::error::Error>> {
@@ -76,5 +76,31 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<MemInfo> {
     });
 
     rx
+}
+
+const SIZES: [&str;4] = ["K", "M", "G", "T"];
+
+pub fn calc_ram_to_fit_size(mem_size : u32) -> String {
+    let mut count = 0;
+
+    if mem_size == 0 {
+        return "0 bytes".to_string()
+    }
+
+    let mut size = mem_size as f64;
+
+    while size > 1000.0 {
+        size = size / 1024.0;
+        count += 1
+    }
+
+    let size_string: String = format!("{:.1}", size);
+    /*if size > 10.0 {
+        size_string = format!("{:.0}", size);
+    } else {
+        size_string = format!("{:.1}", size);
+    }*/
+
+    size_string + SIZES[count]
 }
 
