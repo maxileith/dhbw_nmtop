@@ -150,7 +150,7 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<Vec<CpuUtilization>> {
     let mut stats: VecDeque<ProcStatRow> = VecDeque::new(); // create with fixed size
     let mut iteration_count = 0;
     
-    let dur = time::Duration::from_millis(100);
+    let dur = time::Duration::from_millis(150);
 
     // Thread for the data collection
     let proc_stat_thread = thread::spawn(move || loop {
