@@ -7,7 +7,9 @@ use tui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     terminal::Frame,
-    widgets::{Block, Borders, Cell, Gauge, Row, Table, Widget},
+    text::Span,
+    symbols,
+    widgets::{Axis, Block, Borders, Cell, Chart, Gauge, Dataset, Row, Table, GraphType, Widget},
     Terminal,
 };
 
@@ -31,6 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let stdout = io::stdout().into_raw_mode()?;
     let backend = TermionBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+    
     // Initialize input handler
     let input_handler = util::InputHandler::new();
 
@@ -40,7 +43,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let sleep_duration = time::Duration::from_millis(100);
 
+    let mut core_values = Vec::<Vec<f64>>::new();
+    let mut cpu_values = Vec::<f64>::new();
+
+    //let mut cpu_values = Vec::<f64>::new();
     terminal.clear()?;
+    
     loop {
         let mem_info = match mem_dc_thread.try_recv() {
             Ok(a) => a,
@@ -51,11 +59,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(a) => a,
             Err(_) => Default::default(),
         };
+        
         // Recv data from the data collector thread
-        /*let cpu_stats = match cpu_dc_thread.try_recv() {
+        let cpu_stats = match cpu_dc_thread.try_recv() {
             Ok(a) => a,
             Err(_) => vec![],
-        };*/
+        };
+        
+        // create cpu info
+        let mut counter = 0;
+        for b in cpu_stats {
+            if b.cpu_name == "cpu"{
+                if cpu_values.len() == 300{
+                   cpu_values.remove(0);
+                } 
+                cpu_values.push(b.utilization);
+            }else {
+                if core_values.len() > counter {
+                    if core_values[counter].len() == 300{
+                       core_values[counter].remove(0);
+                    } 
+                    core_values[counter].push(b.utilization);
+                } else {
+                    core_values.push(Vec::new());
+                    core_values[counter].push(b.utilization);
+                }
+                counter += 1
+            }
+        }
 
         let _ = terminal.draw(|f| {
             let chunks = Layout::default()
@@ -78,8 +109,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             f.render_widget(block1, chunks[1]);
             let block2 = Block::default().title("Block 3").borders(Borders::ALL);
             f.render_widget(block2, chunks[2]);
-            draw_meminfo(f, &boxes, &mem_info);
 
+            draw_cpuinfo(f, chunks[1], &cpu_values, &core_values);
+            draw_meminfo(f, &boxes, &mem_info);
             draw_diskinfo(f, &boxes, &disk_info);
         });
 
@@ -148,6 +180,64 @@ fn draw_meminfo<B: Backend>(f: &mut Frame<B>, boxes: &Vec<Rect>, mem_info: &MemI
         .label(label_swap)
         .ratio(mem_swap);
     f.render_widget(gauge_swap, block_chunks[1]);
+}
+
+
+fn draw_cpuinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, data: &Vec<f64>, cores: &Vec<Vec<f64>>) {
+    let mut datasets = Vec::new();
+
+    let mut core_values = Vec::new();
+    for core in cores {
+        let value = core.iter().enumerate().map(|(i, &x)| ((i as f64), x)).collect::<Vec<_>>();
+        core_values.push(value);
+    }
+    let l = core_values.len();
+
+    for i in 0..l {
+        let f = i as f64 /l as f64;
+        let r:u8 = (f * 255.0).round() as u8;
+        let g:u8 = (f * 255.0).round() as u8;
+        let b:u8 = (f * 255.0).round() as u8;
+
+        datasets.push(Dataset::default()
+            .name(format!("cpu{}", i))
+            .marker(symbols::Marker::Braille)
+            .style(Style::default().fg(Color::Rgb(r,g,b)))
+            .graph_type(GraphType::Line)
+            .data(&core_values[i]));
+    }
+    
+    let v = data.iter().enumerate().map(|(i, &x)| ((i as f64), x)).collect::<Vec<_>>();
+    datasets.push(Dataset::default()
+            .name("cpu")
+            .marker(symbols::Marker::Braille)
+            .style(Style::default().fg(Color::Yellow))
+            .graph_type(GraphType::Line)
+            .data(&v));
+
+    let chart = Chart::new(datasets)
+        .block(
+            Block::default()
+                .title(Span::styled(
+                    "CPU",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ))
+                .borders(Borders::ALL),
+        )
+        .x_axis(Axis::default().bounds([0.0, 300.0]))
+        .y_axis(
+            Axis::default()
+                .style(Style::default().fg(Color::Gray))
+                .labels(vec![
+                    Span::styled("0", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::styled("100", Style::default().add_modifier(Modifier::BOLD)),
+                ])
+                .bounds([0.0, 100.0]),
+        );
+
+    f.render_widget(chart, rect);
 }
 
 fn draw_diskinfo<B: Backend>(f: &mut Frame<B>, boxes: &Vec<Rect>, disk_info: &Vec<DiskInfo>) {

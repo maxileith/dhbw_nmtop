@@ -39,7 +39,7 @@ enum ReadingMode {
 
 pub struct CpuUtilization {
     pub cpu_name: String,
-    pub utilization: f32,
+    pub utilization: f64,
 }
 
 impl fmt::Display for CpuUtilization {
@@ -48,13 +48,13 @@ impl fmt::Display for CpuUtilization {
     }
 }
 
-fn calculate_cpu_utilization(previous: &ProcStatRow, current: &ProcStatRow) -> f32 {
+fn calculate_cpu_utilization(previous: &ProcStatRow, current: &ProcStatRow) -> f64 {
     let previous_total_elapsed = previous.get_total_time();
     let current_total_elapsed = current.get_total_time();
 
-    let total_delta = (current_total_elapsed - previous_total_elapsed) as f32;
-    let idle_delta = (current.idle - previous.idle) as f32;
-    let utilization: f32 = 100.0 * (1.0 - idle_delta / total_delta);
+    let total_delta = (current_total_elapsed - previous_total_elapsed) as f64;
+    let idle_delta = (current.idle - previous.idle) as f64;
+    let utilization: f64 = 100.0 * (1.0 - idle_delta / total_delta);
     utilization
 }
 
