@@ -1,8 +1,8 @@
-use std::time;
-use std::thread;
-use std::sync::mpsc;
 use std::process::Command;
 use std::str;
+use std::sync::mpsc;
+use std::thread;
+use std::time;
 
 // equals the "df"-command output
 #[derive(Debug)]
@@ -37,7 +37,7 @@ pub fn get_disks_usage() -> Vec<DiskInfo> {
         if line.starts_with("/dev/") {
             let mut sliced_line = line.split_whitespace();
             let disk_info = DiskInfo {
-                filesystem : sliced_line.next().unwrap().replace("/dev", "").to_string(),
+                filesystem: sliced_line.next().unwrap().replace("/dev", "").to_string(),
                 total: sliced_line.next().unwrap().parse().unwrap(),
                 used: sliced_line.next().unwrap().parse().unwrap(),
                 available: sliced_line.next().unwrap().parse().unwrap(),
@@ -53,30 +53,29 @@ pub fn get_disks_usage() -> Vec<DiskInfo> {
     disk_array
 }
 
-
 pub fn init_data_collection_thread() -> mpsc::Receiver<Vec<DiskInfo>> {
-  let (tx, rx) = mpsc::channel();
-  let dur = time::Duration::from_millis(100);
+    let (tx, rx) = mpsc::channel();
+    let dur = time::Duration::from_millis(100);
 
-  // Thread for the data collection
-  let dc_thread = thread::spawn(move || loop {
-      let m = get_disks_usage();
-      
-      tx.send(m);
+    // Thread for the data collection
+    thread::spawn(move || loop {
+        let m = get_disks_usage();
 
-      thread::sleep(dur);
-  });
+        let _ = tx.send(m);
 
-  rx
+        thread::sleep(dur);
+    });
+
+    rx
 }
 
-const SIZES: [&str;4] = ["K", "M", "G", "T"];
+const SIZES: [&str; 4] = ["K", "M", "G", "T"];
 
-pub fn calc_disk_size(disk_size : u64) -> String {
+pub fn calc_disk_size(disk_size: u64) -> String {
     let mut count = 0;
 
     if disk_size == 0 {
-        return "0".to_string()
+        return "0".to_string();
     }
 
     let mut size = disk_size as f64;
