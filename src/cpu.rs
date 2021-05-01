@@ -1,9 +1,9 @@
 use std::collections::VecDeque;
 use std::fmt;
 use std::fs::File;
+use std::sync::mpsc;
 use std::{io::BufRead, io::BufReader};
 use std::{thread, time};
-use std::sync::mpsc;
 
 /// Represents a result row of the /proc/stat content
 /// Time units are in USER_HZ or Jiffies
@@ -143,20 +143,19 @@ fn update_current_cpu_utilization(
     result
 }
 
-
 pub fn init_data_collection_thread() -> mpsc::Receiver<Vec<CpuUtilization>> {
     let (tx, rx) = mpsc::channel();
 
     let mut stats: VecDeque<ProcStatRow> = VecDeque::new(); // create with fixed size
     let mut iteration_count = 0;
-    
+
     let dur = time::Duration::from_millis(150);
 
     // Thread for the data collection
-    let proc_stat_thread = thread::spawn(move || loop {
+    thread::spawn(move || loop {
         let result = update_current_cpu_utilization(&mut stats, &iteration_count);
-        
-        tx.send(result);
+
+        let _ = tx.send(result);
 
         thread::sleep(dur);
 
@@ -165,4 +164,3 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<Vec<CpuUtilization>> {
 
     rx
 }
-

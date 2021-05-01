@@ -10,8 +10,7 @@ use tui::{
     terminal::Frame,
     text::{Span, Spans},
     widgets::{
-        Axis, Block, Borders, Cell, Chart, Dataset, Gauge, GraphType, Paragraph, Row, Table,
-        Widget, Wrap,
+        Axis, Block, Borders, Cell, Chart, Dataset, Gauge, GraphType, Paragraph, Row, Table, Wrap,
     },
     Terminal,
 };
