@@ -6,10 +6,13 @@ use tui::{
     backend::{Backend, TermionBackend},
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    terminal::Frame,
-    text::Span,
     symbols,
-    widgets::{Axis, Block, Borders, Cell, Chart, Gauge, Dataset, Row, Table, GraphType, Widget},
+    terminal::Frame,
+    text::{Span, Spans},
+    widgets::{
+        Axis, Block, Borders, Cell, Chart, Dataset, Gauge, GraphType, Paragraph, Row, Table,
+        Widget, Wrap,
+    },
     Terminal,
 };
 
@@ -27,28 +30,32 @@ use mem::{calc_ram_to_fit_size, MemInfo};
 mod disk;
 use disk::{calc_disk_size, DiskInfo};
 
+// Module for reading network usage
+mod network;
+use network::{to_humanreadable, NetworkInfo};
+
 // TODO: user input to stop execution
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Terminal initialization
     let stdout = io::stdout().into_raw_mode()?;
     let backend = TermionBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-    
     // Initialize input handler
     let input_handler = util::InputHandler::new();
 
     let cpu_dc_thread = cpu::init_data_collection_thread();
     let mem_dc_thread = mem::init_data_collection_thread();
     let disk_dc_thread = disk::init_data_collection_thread();
+    let network_dc_thread = network::init_data_collection_thread();
 
     let sleep_duration = time::Duration::from_millis(100);
 
     let mut core_values = Vec::<Vec<f64>>::new();
     let mut cpu_values = Vec::<f64>::new();
+    let mut last_network_info: NetworkInfo = Default::default();
 
     //let mut cpu_values = Vec::<f64>::new();
     terminal.clear()?;
-    
     loop {
         let mem_info = match mem_dc_thread.try_recv() {
             Ok(a) => a,
@@ -59,26 +66,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(a) => a,
             Err(_) => Default::default(),
         };
-        
         // Recv data from the data collector thread
         let cpu_stats = match cpu_dc_thread.try_recv() {
             Ok(a) => a,
             Err(_) => vec![],
         };
-        
+
+        let network_info = match network_dc_thread.try_recv() {
+            Ok(a) => a,
+            Err(_) => Default::default(),
+        };
         // create cpu info
         let mut counter = 0;
         for b in cpu_stats {
-            if b.cpu_name == "cpu"{
-                if cpu_values.len() == 300{
-                   cpu_values.remove(0);
-                } 
+            if b.cpu_name == "cpu" {
+                if cpu_values.len() == 300 {
+                    cpu_values.remove(0);
+                }
                 cpu_values.push(b.utilization);
-            }else {
+            } else {
                 if core_values.len() > counter {
-                    if core_values[counter].len() == 300{
-                       core_values[counter].remove(0);
-                    } 
+                    if core_values[counter].len() == 300 {
+                        core_values[counter].remove(0);
+                    }
                     core_values[counter].push(b.utilization);
                 } else {
                     core_values.push(Vec::new());
@@ -107,13 +117,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .split(chunks[0]);
             let block1 = Block::default().title("Block 2").borders(Borders::ALL);
             f.render_widget(block1, chunks[1]);
-            let block2 = Block::default().title("Block 3").borders(Borders::ALL);
-            f.render_widget(block2, chunks[2]);
 
             draw_cpuinfo(f, chunks[1], &cpu_values, &core_values);
             draw_meminfo(f, &boxes, &mem_info);
             draw_diskinfo(f, &boxes, &disk_info);
+            draw_networkinfo(f, chunks[2], &last_network_info, &network_info);
         });
+
+        last_network_info = network_info;
 
         // Handle events
         match input_handler.next() {
@@ -182,38 +193,49 @@ fn draw_meminfo<B: Backend>(f: &mut Frame<B>, boxes: &Vec<Rect>, mem_info: &MemI
     f.render_widget(gauge_swap, block_chunks[1]);
 }
 
-
 fn draw_cpuinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, data: &Vec<f64>, cores: &Vec<Vec<f64>>) {
     let mut datasets = Vec::new();
 
     let mut core_values = Vec::new();
     for core in cores {
-        let value = core.iter().enumerate().map(|(i, &x)| ((i as f64), x)).collect::<Vec<_>>();
+        let value = core
+            .iter()
+            .enumerate()
+            .map(|(i, &x)| ((i as f64), x))
+            .collect::<Vec<_>>();
         core_values.push(value);
     }
     let l = core_values.len();
 
     for i in 0..l {
-        let f = i as f64 /l as f64;
-        let r:u8 = (f * 255.0).round() as u8;
-        let g:u8 = (f * 255.0).round() as u8;
-        let b:u8 = (f * 255.0).round() as u8;
+        let f = i as f64 / l as f64;
+        let r: u8 = (f * 255.0).round() as u8;
+        let g: u8 = (f * 255.0).round() as u8;
+        let b: u8 = (f * 255.0).round() as u8;
 
-        datasets.push(Dataset::default()
-            .name(format!("cpu{}", i))
-            .marker(symbols::Marker::Braille)
-            .style(Style::default().fg(Color::Rgb(r,g,b)))
-            .graph_type(GraphType::Line)
-            .data(&core_values[i]));
+        datasets.push(
+            Dataset::default()
+                .name(format!("cpu{}", i))
+                .marker(symbols::Marker::Braille)
+                .style(Style::default().fg(Color::Rgb(r, g, b)))
+                .graph_type(GraphType::Line)
+                .data(&core_values[i]),
+        );
     }
-    
-    let v = data.iter().enumerate().map(|(i, &x)| ((i as f64), x)).collect::<Vec<_>>();
-    datasets.push(Dataset::default()
+
+    let v = data
+        .iter()
+        .enumerate()
+        .map(|(i, &x)| ((i as f64), x))
+        .collect::<Vec<_>>();
+    datasets.push(
+        Dataset::default()
             .name("cpu")
             .marker(symbols::Marker::Braille)
             .style(Style::default().fg(Color::Yellow))
             .graph_type(GraphType::Line)
-            .data(&v));
+            .data(&v),
+    );
 
     let chart = Chart::new(datasets)
         .block(
@@ -243,16 +265,9 @@ fn draw_cpuinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, data: &Vec<f64>, cores
 fn draw_diskinfo<B: Backend>(f: &mut Frame<B>, boxes: &Vec<Rect>, disk_info: &Vec<DiskInfo>) {
     //draw disk info TODO: divide into own function
     let block = Block::default().title(" Disks ").borders(Borders::ALL);
-    let header_cells = [
-        "Partition",
-        "Available",
-        "In Use",
-        "Total",
-        "Used",
-        "Mount",
-    ]
-    .iter()
-    .map(|h| Cell::from(*h).style(Style::default().fg(Color::White)));
+    let header_cells = ["Partition", "Available", "In Use", "Total", "Used", "Mount"]
+        .iter()
+        .map(|h| Cell::from(*h).style(Style::default().fg(Color::White)));
     let header = Row::new(header_cells).height(1);
     let rows = disk_info.iter().map(|disk| {
         let mut cells = Vec::new();
@@ -273,7 +288,6 @@ fn draw_diskinfo<B: Backend>(f: &mut Frame<B>, boxes: &Vec<Rect>, disk_info: &Ve
 
     f.render_widget(table, boxes[1]);
 }
-
 
 fn size_columns(area_width: u16) -> Vec<Constraint> {
     let width = area_width - 2;
@@ -308,15 +322,35 @@ fn size_columns(area_width: u16) -> Vec<Constraint> {
             Constraint::Length(6),
         ]
     } else if width >= 18 + 2 {
-        vec![
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
-        ]
+        vec![Constraint::Percentage(50), Constraint::Percentage(50)]
     } else if width >= 9 {
-        vec![
-            Constraint::Length(9),
-        ]
+        vec![Constraint::Length(9)]
     } else {
         vec![]
     }
+}
+
+fn draw_networkinfo<B: Backend>(
+    f: &mut Frame<B>,
+    rect: Rect,
+    last_info: &NetworkInfo,
+    current_info: &NetworkInfo,
+) {
+    let receiving = to_humanreadable((current_info.rec_bytes - last_info.rec_bytes)*10) + "/s";
+    let sending = to_humanreadable((current_info.send_bytes - last_info.send_bytes)*10) + "/s";
+    let total_received = to_humanreadable(current_info.rec_bytes);
+    let total_sent = to_humanreadable(current_info.send_bytes);
+
+    let block = Block::default()
+        .title(" Network Usage ")
+        .borders(Borders::ALL);
+
+    let text = vec![
+        Spans::from(format!("Receiving      {}", receiving)),
+        Spans::from(format!("Total Received {}", total_received)),
+        Spans::from(format!("Sending        {}", sending)),
+        Spans::from(format!("Total Sent     {}", total_sent)),
+    ];
+    let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
+    f.render_widget(paragraph, rect);
 }
