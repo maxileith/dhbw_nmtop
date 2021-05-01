@@ -9,7 +9,7 @@ use tui::{
     terminal::Frame,
     text::Span,
     symbols,
-    widgets::{Axis, Block, Borders, Cell, Chart, Gauge, Dataset, Row, Table, GraphType, Widget},
+    widgets::{Axis, Block, Borders, Cell, Chart, Gauge, Dataset, Row, Table, GraphType},
     Terminal,
 };
 
@@ -105,9 +105,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
                 .split(chunks[0]);
-            let block1 = Block::default().title("Block 2").borders(Borders::ALL);
+            let block1 = Block::default().borders(Borders::ALL);
             f.render_widget(block1, chunks[1]);
-            let block2 = Block::default().title("Block 3").borders(Borders::ALL);
+            let block2 = Block::default().borders(Borders::ALL);
             f.render_widget(block2, chunks[2]);
 
             draw_cpuinfo(f, chunks[1], &cpu_values, &core_values);
@@ -191,18 +191,27 @@ fn draw_cpuinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, data: &Vec<f64>, cores
         let value = core.iter().enumerate().map(|(i, &x)| ((i as f64), x)).collect::<Vec<_>>();
         core_values.push(value);
     }
-    let l = core_values.len();
-
-    for i in 0..l {
-        let f = i as f64 /l as f64;
-        let r:u8 = (f * 255.0).round() as u8;
-        let g:u8 = (f * 255.0).round() as u8;
-        let b:u8 = (f * 255.0).round() as u8;
+    for i in 0..core_values.len() {
+        let h = (i * 40) % 360;
+        let mut color = Color::White; 
+        if h < 60{
+            color = Color::Rgb(255,(h % 255) as u8,0);
+        } else if h < 120 {
+            color = Color::Rgb(255 - (h % 255) as u8, 255, 0);
+        } else if h < 180 {
+            color = Color::Rgb(0,255, (h % 255) as u8);
+        } else if h < 240 {
+            color = Color::Rgb(0, 255 - (h % 255) as u8, 255);
+        } else if h < 300 {
+            color = Color::Rgb((h % 255) as u8, 0, 255);
+        } else if h < 360 {
+            color = Color::Rgb(255, 0, 255 - (h % 255) as u8);
+        }
 
         datasets.push(Dataset::default()
             .name(format!("cpu{}", i))
             .marker(symbols::Marker::Braille)
-            .style(Style::default().fg(Color::Rgb(r,g,b)))
+            .style(Style::default().fg(color))
             .graph_type(GraphType::Line)
             .data(&core_values[i]));
     }
