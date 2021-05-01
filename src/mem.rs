@@ -91,7 +91,7 @@ pub fn calc_ram_to_fit_size(mem_size : u32) -> String {
 
     while size > 1000.0 {
         size = size / 1024.0;
-        count += 1
+        count += 1;
     }
 
     let size_string: String = format!("{:.1}", size);
