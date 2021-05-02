@@ -79,6 +79,16 @@ impl WidgetType {
             _ => WidgetType::Memory, //default case
         }
     }
+
+    fn get_help_text(&self) -> &str {
+        match *self {
+            WidgetType::Memory=> "",
+            WidgetType::Disk => "",
+            WidgetType::Network => "",
+            WidgetType::CPU => "ESC: navigation, SPACE: show/hide all cores",
+            WidgetType::Processes => "ESC: navigation, s:sort, left/right:  move header, up/down: select process",
+        }
+    }
 }
 
 struct DataWidget {
@@ -217,9 +227,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 }
             }
+   
+            
+            let mut help_text;
+            if app.state == AppState::Navigation{
+                help_text = app.current_widget.get_help_text();
+            } else {
+                help_text = "ESC: navigation";
+            }
 
             // Draw help text
-            let help_paragraph = Paragraph::new("ESC: navigation").block(Block::default()).alignment(Alignment::Left);
+            let help_paragraph = Paragraph::new(help_text).block(Block::default()).alignment(Alignment::Left);
             f.render_widget(help_paragraph, chunks[3]);
             
         });
@@ -547,5 +565,3 @@ fn draw_networkinfo<B: Backend>(
     let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
     f.render_widget(paragraph, rect);
 }
-
-fn show_help_menu() {}
