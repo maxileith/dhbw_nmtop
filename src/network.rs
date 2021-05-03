@@ -59,7 +59,7 @@ pub fn get_network_io() -> Result<NetworkInfo, Box<dyn std::error::Error>> {
 
 const SIZES: [&str; 5] = [" byte", " KiB", " MiB", " GiB", " TiB"];
 
-pub fn to_humanreadable(bytes: u64) -> String {
+pub fn to_humanreadable(bytes: usize) -> String {
     let mut count = 0;
 
     if bytes < 1000 {

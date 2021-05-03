@@ -272,7 +272,7 @@ fn draw_cpuinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, data: &Vec<f64>, cores
         Dataset::default()
             .name("cpu")
             .marker(symbols::Marker::Braille)
-            .style(Style::default().fg(Color::Yellow))
+            .style(Style::default().fg(Color::White))
             .graph_type(GraphType::Line)
             .data(&v),
     );
@@ -356,8 +356,8 @@ fn draw_processesinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, pl: &ProcessList
         cells.push(Cell::from(p.threads.to_string()));
         cells.push(Cell::from(p.name.to_string()));
         cells.push(Cell::from(p.state.to_string()));
-        cells.push(Cell::from(p.virtual_memory_size.to_string()));
-        cells.push(Cell::from(p.swapped_memory.to_string()));
+        cells.push(Cell::from(to_humanreadable(p.virtual_memory_size * 1000)));
+        cells.push(Cell::from(to_humanreadable(p.swapped_memory * 1000)));
         cells.push(Cell::from(p.command.to_string()));
         Row::new(cells).height(1)
     });
