@@ -126,6 +126,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut processes_info: ProcessList = Default::default();
     let mut mem_info: MemInfo = Default::default();
     let mut disk_info: std::vec::Vec<disk::DiskInfo> = Default::default();
+    let mut network_info: NetworkInfo = Default::default();
 
     let data_widgets = vec![WidgetType::Memory, WidgetType::Disk, WidgetType::Network, WidgetType::CPU, WidgetType::Processes];
 
@@ -153,9 +154,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Err(_) => processes_info,
         };
 
-        let network_info = match network_dc_thread.try_recv() {
-            Ok(a) => a,
-            Err(_) => Default::default(),
+        network_info = match network_dc_thread.try_recv() {
+            Ok(a) => {
+                last_network_info = network_info;
+                a
+            },
+            Err(_) => network_info,
         };
         // create cpu info
         let mut counter = 0;
@@ -243,8 +247,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             f.render_widget(help_paragraph, chunks[3]);
             
         });
-
-        last_network_info = network_info;
 
         // Handle events
         let event = input_handler.next();
@@ -417,7 +419,7 @@ fn draw_cpuinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, block: Block, data: &V
         Dataset::default()
             .name("cpu")
             .marker(symbols::Marker::Braille)
-            .style(Style::default().fg(Color::Yellow))
+            .style(Style::default().fg(Color::White))
             .graph_type(GraphType::Line)
             .data(&v),
     );
@@ -483,8 +485,8 @@ fn draw_processesinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, block: Block, pl
         cells.push(Cell::from(p.threads.to_string()));
         cells.push(Cell::from(p.name.to_string()));
         cells.push(Cell::from(p.state.to_string()));
-        cells.push(Cell::from(p.virtual_memory_size.to_string()));
-        cells.push(Cell::from(p.swapped_memory.to_string()));
+        cells.push(Cell::from(to_humanreadable(p.virtual_memory_size * 1000)));
+        cells.push(Cell::from(to_humanreadable(p.swapped_memory * 1000)));
         cells.push(Cell::from(p.command.to_string()));
         Row::new(cells).height(1)
     });
@@ -557,10 +559,15 @@ fn draw_networkinfo<B: Backend>(
     last_info: &NetworkInfo,
     current_info: &NetworkInfo,
 ) {
-    let receiving = 0;//to_humanreadable((current_info.rec_bytes - last_info.rec_bytes) * 10) + "/s";
-    let sending = 0;//to_humanreadable((current_info.send_bytes - last_info.send_bytes) * 10) + "/s";
-    let total_received = 0;//to_humanreadable(current_info.rec_bytes);
-    let total_sent = 0;//to_humanreadable(current_info.send_bytes);
+
+    if last_info.rec_bytes > current_info.rec_bytes {
+        return;
+    }
+
+    let receiving = to_humanreadable((current_info.rec_bytes - last_info.rec_bytes) * 2) + "/s";
+    let sending = to_humanreadable((current_info.send_bytes - last_info.send_bytes) * 2) + "/s";
+    let total_received = to_humanreadable(current_info.rec_bytes);
+    let total_sent = to_humanreadable(current_info.send_bytes);
 
     let text = vec![
         Spans::from(format!("Receiving      {}", receiving)),
