@@ -444,8 +444,8 @@ fn draw_networkinfo<B: Backend>(
         return;
     }
 
-    let receiving = to_humanreadable((current_info.rec_bytes - last_info.rec_bytes) * 10) + "/s";
-    let sending = to_humanreadable((current_info.send_bytes - last_info.send_bytes) * 10) + "/s";
+    let receiving = to_humanreadable((current_info.rec_bytes - last_info.rec_bytes) * 2) + "/s";
+    let sending = to_humanreadable((current_info.send_bytes - last_info.send_bytes) * 2) + "/s";
     let total_received = to_humanreadable(current_info.rec_bytes);
     let total_sent = to_humanreadable(current_info.send_bytes);
 
