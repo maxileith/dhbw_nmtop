@@ -124,21 +124,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut last_network_info: NetworkInfo = Default::default();
 
     let mut processes_info: ProcessList = Default::default();
+    let mut mem_info: MemInfo = Default::default();
+    let mut disk_info: std::vec::Vec<disk::DiskInfo> = Default::default();
 
     let data_widgets = vec![WidgetType::Memory, WidgetType::Disk, WidgetType::Network, WidgetType::CPU, WidgetType::Processes];
 
     //let mut cpu_values = Vec::<f64>::new();
     terminal.clear()?;
     loop {
-        let mem_info = match mem_dc_thread.try_recv() {
+        mem_info = match mem_dc_thread.try_recv() {
             Ok(a) => a,
-            Err(_) => Default::default(),
+            Err(_) => mem_info,
         };
 
         // Recv data from the data collector thread
-        let disk_info = match disk_dc_thread.try_recv() {
+        disk_info = match disk_dc_thread.try_recv() {
             Ok(a) => a,
-            Err(_) => Default::default(),
+            Err(_) => disk_info,
         };
         // Recv data from the data collector thread
         let cpu_stats = match cpu_dc_thread.try_recv() {
@@ -323,6 +325,10 @@ fn draw_meminfo<B: Backend>(f: &mut Frame<B>, rect: Rect, block: Block, mem_info
 
     // Render block
     f.render_widget(block, rect);
+
+    if mem_info.mem_total == 0 || mem_info.swap_total == 0 {
+        return;
+    }
 
     // calc mem infos
     let mem_usage =
@@ -551,10 +557,10 @@ fn draw_networkinfo<B: Backend>(
     last_info: &NetworkInfo,
     current_info: &NetworkInfo,
 ) {
-    let receiving = to_humanreadable((current_info.rec_bytes - last_info.rec_bytes) * 10) + "/s";
-    let sending = to_humanreadable((current_info.send_bytes - last_info.send_bytes) * 10) + "/s";
-    let total_received = to_humanreadable(current_info.rec_bytes);
-    let total_sent = to_humanreadable(current_info.send_bytes);
+    let receiving = 0;//to_humanreadable((current_info.rec_bytes - last_info.rec_bytes) * 10) + "/s";
+    let sending = 0;//to_humanreadable((current_info.send_bytes - last_info.send_bytes) * 10) + "/s";
+    let total_received = 0;//to_humanreadable(current_info.rec_bytes);
+    let total_sent = 0;//to_humanreadable(current_info.send_bytes);
 
     let text = vec![
         Spans::from(format!("Receiving      {}", receiving)),

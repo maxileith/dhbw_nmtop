@@ -61,7 +61,7 @@ pub fn show_ram_usage() -> Result<MemInfo, Box<dyn std::error::Error>> {
 
 pub fn init_data_collection_thread() -> mpsc::Receiver<MemInfo> {
     let (tx, rx) = mpsc::channel();
-    let dur = time::Duration::from_millis(100);
+    let dur = time::Duration::from_millis(500);
 
     // Thread for the data collection
     thread::spawn(move || loop {
