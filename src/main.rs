@@ -60,6 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut processes_info: ProcessList = Default::default();
     let mut mem_info: MemInfo = Default::default();
     let mut disk_info: std::vec::Vec<disk::DiskInfo> = Default::default();
+    let mut network_info: NetworkInfo = Default::default();
 
     //let mut cpu_values = Vec::<f64>::new();
     terminal.clear()?;
@@ -85,9 +86,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Err(_) => processes_info,
         };
 
-        let network_info = match network_dc_thread.try_recv() {
-            Ok(a) => a,
-            Err(_) => Default::default(),
+        network_info = match network_dc_thread.try_recv() {
+            Ok(a) => {
+                last_network_info = network_info;
+                a
+            },
+            Err(_) => network_info,
         };
         // create cpu info
         let mut counter = 0;
@@ -141,8 +145,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             draw_processesinfo(f, chunks[2], &processes_info);
             draw_networkinfo(f, boxes[2], &last_network_info, &network_info);
         });
-
-        last_network_info = network_info;
 
         // Handle events
         match input_handler.next() {
@@ -437,10 +439,15 @@ fn draw_networkinfo<B: Backend>(
     last_info: &NetworkInfo,
     current_info: &NetworkInfo,
 ) {
-    let receiving = 0;//to_humanreadable((current_info.rec_bytes - last_info.rec_bytes) * 10) + "/s";
-    let sending = 0;//to_humanreadable((current_info.send_bytes - last_info.send_bytes) * 10) + "/s";
-    let total_received = 0;//to_humanreadable(current_info.rec_bytes);
-    let total_sent = 0;//to_humanreadable(current_info.send_bytes);
+
+    if last_info.rec_bytes > current_info.rec_bytes {
+        return;
+    }
+
+    let receiving = to_humanreadable((current_info.rec_bytes - last_info.rec_bytes) * 10) + "/s";
+    let sending = to_humanreadable((current_info.send_bytes - last_info.send_bytes) * 10) + "/s";
+    let total_received = to_humanreadable(current_info.rec_bytes);
+    let total_sent = to_humanreadable(current_info.send_bytes);
 
     let block = Block::default()
         .title(Span::styled(
