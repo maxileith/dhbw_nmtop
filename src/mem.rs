@@ -1,8 +1,8 @@
-use std::{io::BufRead, io::BufReader};
 use std::fs::File;
-use std::time;
-use std::thread;
 use std::sync::mpsc;
+use std::thread;
+use std::time;
+use std::{io::BufRead, io::BufReader};
 
 #[derive(Default, Debug)]
 pub struct MemInfo {
@@ -16,9 +16,9 @@ pub struct MemInfo {
 
 pub fn show_ram_usage() -> Result<MemInfo, Box<dyn std::error::Error>> {
     let meminfo = "/proc/meminfo";
-    
+
     let mut mem_info: MemInfo = Default::default();
-    
+
     let file = File::open(meminfo)?;
     let reader = BufReader::new(file);
     let mut mem_numbers: [String; 6] = [
@@ -64,13 +64,13 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<MemInfo> {
     let dur = time::Duration::from_millis(100);
 
     // Thread for the data collection
-    let dc_thread = thread::spawn(move || loop {
-        let m = match show_ram_usage(){
+    thread::spawn(move || loop {
+        let m = match show_ram_usage() {
             Ok(a) => a,
             Err(_) => Default::default(),
         };
-        
-        tx.send(m);
+
+        let _ = tx.send(m);
 
         thread::sleep(dur);
     });
@@ -78,13 +78,13 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<MemInfo> {
     rx
 }
 
-const SIZES: [&str;4] = ["K", "M", "G", "T"];
+const SIZES: [&str; 4] = ["K", "M", "G", "T"];
 
-pub fn calc_ram_to_fit_size(mem_size : u32) -> String {
+pub fn calc_ram_to_fit_size(mem_size: u32) -> String {
     let mut count = 0;
 
     if mem_size == 0 {
-        return "0 bytes".to_string()
+        return "0 bytes".to_string();
     }
 
     let mut size = mem_size as f64;
@@ -103,4 +103,3 @@ pub fn calc_ram_to_fit_size(mem_size : u32) -> String {
 
     size_string + SIZES[count]
 }
-

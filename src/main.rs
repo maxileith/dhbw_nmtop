@@ -10,8 +10,7 @@ use tui::{
     terminal::Frame,
     text::{Span, Spans},
     widgets::{
-        Axis, Block, Borders, Cell, Chart, Dataset, Gauge, GraphType, Paragraph, Row, Table,
-        Widget, Wrap,
+        Axis, Block, Borders, Cell, Chart, Dataset, Gauge, GraphType, Paragraph, Row, Table, Wrap,
     },
     Terminal,
 };
@@ -30,6 +29,9 @@ use mem::{calc_ram_to_fit_size, MemInfo};
 mod disk;
 use disk::{calc_disk_size, DiskInfo};
 
+// Module for managing processes
+mod processes;
+use processes::ProcessList;
 // Module for reading network usage
 mod network;
 use network::{to_humanreadable, NetworkInfo};
@@ -46,13 +48,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cpu_dc_thread = cpu::init_data_collection_thread();
     let mem_dc_thread = mem::init_data_collection_thread();
     let disk_dc_thread = disk::init_data_collection_thread();
+    let processes_dc_thread = processes::init_data_collection_thread();
     let network_dc_thread = network::init_data_collection_thread();
 
-    let sleep_duration = time::Duration::from_millis(100);
+    let sleep_duration = time::Duration::from_millis(500);
 
     let mut core_values = Vec::<Vec<f64>>::new();
     let mut cpu_values = Vec::<f64>::new();
     let mut last_network_info: NetworkInfo = Default::default();
+
+    let mut processes_info: ProcessList = Default::default();
 
     //let mut cpu_values = Vec::<f64>::new();
     terminal.clear()?;
@@ -62,6 +67,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Err(_) => Default::default(),
         };
 
+        // Recv data from the data collector thread
         let disk_info = match disk_dc_thread.try_recv() {
             Ok(a) => a,
             Err(_) => Default::default(),
@@ -70,6 +76,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let cpu_stats = match cpu_dc_thread.try_recv() {
             Ok(a) => a,
             Err(_) => vec![],
+        };
+        // Recv data from the data collector thread
+        processes_info = match processes_dc_thread.try_recv() {
+            Ok(a) => a,
+            Err(_) => processes_info,
         };
 
         let network_info = match network_dc_thread.try_recv() {
@@ -105,23 +116,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .constraints(
                     [
                         Constraint::Length(6),
-                        Constraint::Min(8),
-                        Constraint::Length(6),
+                        Constraint::Length(10),
+                        Constraint::Min(1),
                     ]
                     .as_ref(),
                 )
                 .split(f.size());
             let boxes = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                .constraints([Constraint::Percentage(30), Constraint::Percentage(45), Constraint::Percentage(25)].as_ref())
                 .split(chunks[0]);
-            let block1 = Block::default().title("Block 2").borders(Borders::ALL);
-            f.render_widget(block1, chunks[1]);
+            // let block1 = Block::default().title("Block 2").borders(Borders::ALL);
+            // f.render_widget(block1, chunks[1]);
+            // let block2 = Block::default().title("Block 3").borders(Borders::ALL);
+            // f.render_widget(block2, chunks[2]);
+
+            // print!("{:?}", processes_info.processes);
 
             draw_cpuinfo(f, chunks[1], &cpu_values, &core_values);
             draw_meminfo(f, &boxes, &mem_info);
             draw_diskinfo(f, &boxes, &disk_info);
-            draw_networkinfo(f, chunks[2], &last_network_info, &network_info);
+            draw_processesinfo(f, chunks[2], &processes_info);
+            draw_networkinfo(f, boxes[2], &last_network_info, &network_info);
         });
 
         last_network_info = network_info;
@@ -152,7 +168,13 @@ fn draw_meminfo<B: Backend>(f: &mut Frame<B>, boxes: &Vec<Rect>, mem_info: &MemI
         .margin(1)
         .split(boxes[0]);
 
-    let block = Block::default().title(" Mem ").borders(Borders::ALL);
+    let block = Block::default()
+        .title(Span::styled(
+        "Memory",
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+        )).borders(Borders::ALL);
     f.render_widget(block, boxes[0]);
 
     // calc mem infos
@@ -168,7 +190,7 @@ fn draw_meminfo<B: Backend>(f: &mut Frame<B>, boxes: &Vec<Rect>, mem_info: &MemI
         .block(Block::default().title(title_mem))
         .gauge_style(
             Style::default()
-                .fg(Color::Magenta)
+                .fg(Color::Cyan)
                 .bg(Color::Black)
                 .add_modifier(Modifier::ITALIC | Modifier::BOLD),
         )
@@ -184,7 +206,7 @@ fn draw_meminfo<B: Backend>(f: &mut Frame<B>, boxes: &Vec<Rect>, mem_info: &MemI
         .block(Block::default().title(title_swap))
         .gauge_style(
             Style::default()
-                .fg(Color::Magenta)
+                .fg(Color::Cyan)
                 .bg(Color::Black)
                 .add_modifier(Modifier::ITALIC | Modifier::BOLD),
         )
@@ -205,19 +227,29 @@ fn draw_cpuinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, data: &Vec<f64>, cores
             .collect::<Vec<_>>();
         core_values.push(value);
     }
-    let l = core_values.len();
 
-    for i in 0..l {
-        let f = i as f64 / l as f64;
-        let r: u8 = (f * 255.0).round() as u8;
-        let g: u8 = (f * 255.0).round() as u8;
-        let b: u8 = (f * 255.0).round() as u8;
+    for i in 0..core_values.len() {
+        let h = (i * 40) % 360;
+        let mut color = Color::White;
+        if h < 60 {
+            color = Color::Rgb(255, (h % 255) as u8, 0);
+        } else if h < 120 {
+            color = Color::Rgb(255 - (h % 255) as u8, 255, 0);
+        } else if h < 180 {
+            color = Color::Rgb(0, 255, (h % 255) as u8);
+        } else if h < 240 {
+            color = Color::Rgb(0, 255 - (h % 255) as u8, 255);
+        } else if h < 300 {
+            color = Color::Rgb((h % 255) as u8, 0, 255);
+        } else if h < 360 {
+            color = Color::Rgb(255, 0, 255 - (h % 255) as u8);
+        }
 
         datasets.push(
             Dataset::default()
                 .name(format!("cpu{}", i))
                 .marker(symbols::Marker::Braille)
-                .style(Style::default().fg(Color::Rgb(r, g, b)))
+                .style(Style::default().fg(color))
                 .graph_type(GraphType::Line)
                 .data(&core_values[i]),
         );
@@ -253,7 +285,7 @@ fn draw_cpuinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, data: &Vec<f64>, cores
             Axis::default()
                 .style(Style::default().fg(Color::Gray))
                 .labels(vec![
-                    Span::styled("0", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::styled("  0", Style::default().add_modifier(Modifier::BOLD)),
                     Span::styled("100", Style::default().add_modifier(Modifier::BOLD)),
                 ])
                 .bounds([0.0, 100.0]),
@@ -264,7 +296,13 @@ fn draw_cpuinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, data: &Vec<f64>, cores
 
 fn draw_diskinfo<B: Backend>(f: &mut Frame<B>, boxes: &Vec<Rect>, disk_info: &Vec<DiskInfo>) {
     //draw disk info TODO: divide into own function
-    let block = Block::default().title(" Disks ").borders(Borders::ALL);
+    let block = Block::default()
+        .title(Span::styled(
+        "Disks",
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+        )).borders(Borders::ALL);
     let header_cells = ["Partition", "Available", "In Use", "Total", "Used", "Mount"]
         .iter()
         .map(|h| Cell::from(*h).style(Style::default().fg(Color::White)));
@@ -287,6 +325,63 @@ fn draw_diskinfo<B: Backend>(f: &mut Frame<B>, boxes: &Vec<Rect>, disk_info: &Ve
         .column_spacing(2);
 
     f.render_widget(table, boxes[1]);
+}
+
+fn draw_processesinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, pl: &ProcessList) {
+    let selected_style = Style::default().add_modifier(Modifier::REVERSED);
+    let header_style = Style::default().bg(Color::DarkGray).fg(Color::Black);
+    let header_cells = [
+        "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "VM", "SM", "CMD",
+    ]
+        .iter()
+        .map(|h| Cell::from(*h));
+    let header = Row::new(header_cells)
+        .style(header_style)
+        .height(1);
+    let rows = pl.processes.iter().map(|p| {
+        let mut cells = Vec::new();
+        cells.push(Cell::from(p.pid.to_string()));
+        cells.push(Cell::from(p.parent_pid.to_string()));
+        cells.push(Cell::from(p.thread_group_id.to_string()));
+        cells.push(Cell::from(p.user.to_string()));
+        cells.push(Cell::from(p.umask.to_string()));
+        cells.push(Cell::from(p.threads.to_string()));
+        cells.push(Cell::from(p.name.to_string()));
+        cells.push(Cell::from(p.state.to_string()));
+        cells.push(Cell::from(p.virtual_memory_size.to_string()));
+        cells.push(Cell::from(p.swapped_memory.to_string()));
+        cells.push(Cell::from(p.command.to_string()));
+        Row::new(cells).height(1)
+    });
+    // println!("{}", rows.len());
+    let table = Table::new(rows)
+        .header(header)
+        .highlight_style(selected_style)
+        .widths(&[
+            Constraint::Length(7),
+            Constraint::Length(7),
+            Constraint::Length(7),
+            Constraint::Length(15),
+            Constraint::Length(6),
+            Constraint::Length(7),
+            Constraint::Length(30),
+            Constraint::Length(15),
+            Constraint::Length(9),
+            Constraint::Length(9),
+            Constraint::Min(1),
+        ])
+        .block(
+            Block::default()
+            .title(Span::styled(
+                "Processes",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .borders(Borders::ALL),
+        );
+    f.render_widget(table, rect);
+
 }
 
 fn size_columns(area_width: u16) -> Vec<Constraint> {
@@ -336,14 +431,18 @@ fn draw_networkinfo<B: Backend>(
     last_info: &NetworkInfo,
     current_info: &NetworkInfo,
 ) {
-    let receiving = to_humanreadable((current_info.rec_bytes - last_info.rec_bytes)*10) + "/s";
-    let sending = to_humanreadable((current_info.send_bytes - last_info.send_bytes)*10) + "/s";
+    let receiving = to_humanreadable((current_info.rec_bytes - last_info.rec_bytes) * 10) + "/s";
+    let sending = to_humanreadable((current_info.send_bytes - last_info.send_bytes) * 10) + "/s";
     let total_received = to_humanreadable(current_info.rec_bytes);
     let total_sent = to_humanreadable(current_info.send_bytes);
 
     let block = Block::default()
-        .title(" Network Usage ")
-        .borders(Borders::ALL);
+        .title(Span::styled(
+        "Network",
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+        )).borders(Borders::ALL);
 
     let text = vec![
         Spans::from(format!("Receiving      {}", receiving)),
