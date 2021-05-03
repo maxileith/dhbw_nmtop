@@ -9,14 +9,14 @@ const PROC_NET_DEV: &str = "/proc/net/dev";
 #[derive(Default, Debug)]
 pub struct NetworkInfo {
     pub interface: String,
-    pub rec_bytes: u64,
-    pub rec_packets: u64,
-    pub rec_errs: u64,
-    pub rec_drop: u64,
-    pub send_bytes: u64,
-    pub send_packets: u64,
-    pub send_errs: u64,
-    pub send_drop: u64,
+    pub rec_bytes: usize,
+    pub rec_packets: usize,
+    pub rec_errs: usize,
+    pub rec_drop: usize,
+    pub send_bytes: usize,
+    pub send_packets: usize,
+    pub send_errs: usize,
+    pub send_drop: usize,
 }
 
 pub fn get_network_io() -> Result<NetworkInfo, Box<dyn std::error::Error>> {
@@ -41,7 +41,7 @@ pub fn get_network_io() -> Result<NetworkInfo, Box<dyn std::error::Error>> {
         // collect iterator into vector
         let row_values = row.split_whitespace().collect::<Vec<_>>();
 
-        if row_values[1].parse::<u64>().unwrap() > network_info.rec_bytes {
+        if row_values[1].parse::<usize>().unwrap() > network_info.rec_bytes {
             network_info.interface = row_values[0].to_string();
             network_info.rec_bytes = row_values[1].parse().unwrap();
             network_info.rec_packets = row_values[2].parse().unwrap();
