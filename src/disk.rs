@@ -8,9 +8,9 @@ use std::time;
 #[derive(Debug, Default)]
 pub struct DiskInfo {
     pub filesystem: String,
-    pub total: u64,
-    pub used: u64,
-    pub available: u64,
+    pub total: usize,
+    pub used: usize,
+    pub available: usize,
     pub used_percentage: String,
     pub mountpoint: String,
 }
@@ -71,7 +71,7 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<Vec<DiskInfo>> {
 
 const SIZES: [&str; 4] = ["K", "M", "G", "T"];
 
-pub fn calc_disk_size(disk_size: u64) -> String {
+pub fn calc_disk_size(disk_size: usize) -> String {
     let mut count = 0;
 
     if disk_size == 0 {
