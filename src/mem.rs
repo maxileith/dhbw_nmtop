@@ -61,7 +61,7 @@ pub fn show_ram_usage() -> Result<MemInfo, Box<dyn std::error::Error>> {
 
 pub fn init_data_collection_thread() -> mpsc::Receiver<MemInfo> {
     let (tx, rx) = mpsc::channel();
-    let dur = time::Duration::from_millis(100);
+    let dur = time::Duration::from_millis(500);
 
     // Thread for the data collection
     thread::spawn(move || loop {
@@ -78,7 +78,7 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<MemInfo> {
     rx
 }
 
-const SIZES: [&str; 4] = ["K", "M", "G", "T"];
+const SIZES: [&str; 4] = [" KiB", " MiB", " GiB", " TiB"];
 
 pub fn calc_ram_to_fit_size(mem_size: u32) -> String {
     let mut count = 0;
