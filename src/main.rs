@@ -566,15 +566,27 @@ fn draw_networkinfo<B: Backend>(
 
     let receiving = to_humanreadable((current_info.rec_bytes - last_info.rec_bytes) * 2) + "/s";
     let sending = to_humanreadable((current_info.send_bytes - last_info.send_bytes) * 2) + "/s";
-    let total_received = to_humanreadable(current_info.rec_bytes);
-    let total_sent = to_humanreadable(current_info.send_bytes);
+    let text: Vec<tui::text::Spans>;
 
-    let text = vec![
-        Spans::from(format!("Receiving      {}", receiving)),
-        Spans::from(format!("Total Received {}", total_received)),
-        Spans::from(format!("Sending        {}", sending)),
-        Spans::from(format!("Total Sent     {}", total_sent)),
-    ];
+    if rect.width > 25 {
+        let total_received = to_humanreadable(current_info.rec_bytes);
+        let total_sent = to_humanreadable(current_info.send_bytes);
+        text = vec![
+            Spans::from(format!("Receiving      {}", receiving)),
+            Spans::from(format!("Total Received {}", total_received)),
+            Spans::from(format!("Sending        {}", sending)),
+            Spans::from(format!("Total Sent     {}", total_sent)),
+        ];
+    } else {
+        text = vec![
+            Spans::from("Receiving"),
+            Spans::from(format!("{}", receiving)),
+            Spans::from("Sending"),
+            Spans::from(format!("{}", sending)),
+        ];
+    }
+
+    
     let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
     f.render_widget(paragraph, rect);
 }
