@@ -10,13 +10,13 @@ use tui::{
     terminal::Frame,
     text::{Span, Spans},
     widgets::{
-        Axis, Block, Borders, BorderType, Cell, Chart, Dataset, Gauge, GraphType, Paragraph, Row, Table, Wrap,
+        Axis, Block, BorderType, Borders, Cell, Chart, Dataset, Gauge, GraphType, Paragraph, Row,
+        Table, Wrap,
     },
     Terminal,
 };
 
 mod util;
-use util::InputEvent;
 
 // Module for reading CPU usage data
 mod cpu;
@@ -36,7 +36,6 @@ use processes::ProcessList;
 mod network;
 use network::{to_humanreadable, NetworkInfo};
 
-
 #[derive(PartialEq)]
 enum AppState {
     Navigation,
@@ -46,6 +45,8 @@ enum AppState {
 struct AppLogic {
     state: AppState,
     current_widget: WidgetType,
+    show_selected_widget: bool,
+    show_all_cores: bool,
 }
 
 #[derive(PartialEq)]
@@ -61,7 +62,7 @@ impl WidgetType {
     // returns id, name
     fn get_value(&self) -> (usize, &str) {
         match *self {
-            WidgetType::Memory=> (0, "Memory"),
+            WidgetType::Memory => (0, "Memory"),
             WidgetType::Disk => (1, "Disk"),
             WidgetType::Network => (2, "Network"),
             WidgetType::CPU => (3, "CPU"),
@@ -82,11 +83,13 @@ impl WidgetType {
 
     fn get_help_text(&self) -> &str {
         match *self {
-            WidgetType::Memory=> "",
+            WidgetType::Memory => "",
             WidgetType::Disk => "",
             WidgetType::Network => "",
-            WidgetType::CPU => "ESC: navigation, SPACE: show/hide all cores",
-            WidgetType::Processes => "ESC: navigation, s:sort, left/right:  move header, up/down: select process",
+            WidgetType::CPU => "SPACE: show/hide all cores",
+            WidgetType::Processes => {
+                "s:sort, left/right:  move header, up/down: select process"
+            }
         }
     }
 }
@@ -106,6 +109,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = AppLogic {
         state: AppState::Interaction,
         current_widget: WidgetType::Memory,
+        show_selected_widget: false,
+        show_all_cores: true,
     };
 
     // Initialize input handler
@@ -128,7 +133,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut disk_info: std::vec::Vec<disk::DiskInfo> = Default::default();
     let mut network_info: NetworkInfo = Default::default();
 
-    let data_widgets = vec![WidgetType::Memory, WidgetType::Disk, WidgetType::Network, WidgetType::CPU, WidgetType::Processes];
+    let data_widgets = vec![
+        WidgetType::Memory,
+        WidgetType::Disk,
+        WidgetType::Network,
+        WidgetType::CPU,
+        WidgetType::Processes,
+    ];
 
     //let mut cpu_values = Vec::<f64>::new();
     terminal.clear()?;
@@ -158,7 +169,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(a) => {
                 last_network_info = network_info;
                 a
-            },
+            }
             Err(_) => network_info,
         };
         // create cpu info
@@ -208,90 +219,126 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .as_ref(),
                 )
                 .split(chunks[0]);
-           
+
             // Draw data widgets
             for dw in &data_widgets {
-                let (id, name)  = dw.get_value();
-                
-                let selected = id  == app.current_widget.get_value().0 && app.state == AppState::Navigation;
+                let (id, name) = dw.get_value();
+
+                let mut selected = id == app.current_widget.get_value().0;
+                let navigation = app.state == AppState::Navigation;
+
+                if !navigation {
+                    selected = selected && app.show_selected_widget; 
+                }
 
                 match dw {
                     WidgetType::Memory => {
-                        draw_meminfo(f, boxes[0], create_block(name, selected), &mem_info);
-                    },
-                    WidgetType::Disk=> {
-                        draw_diskinfo(f, boxes[1], create_block(name, selected), &disk_info);
-                    },
-                    WidgetType::Network=> {
-                        draw_networkinfo(f, boxes[2], create_block(name, selected), &last_network_info, &network_info);
-                    },
-                    WidgetType::CPU=> {
-                        draw_cpuinfo(f, chunks[1], create_block(name, selected), &cpu_values, &core_values);
-                    },
-                    WidgetType::Processes=> {
-                        draw_processesinfo(f, chunks[2], create_block(name, selected),  &processes_info);
-                    },
+                        draw_meminfo(f, boxes[0], create_block(name, selected, navigation), &mem_info);
+                    }
+                    WidgetType::Disk => {
+                        draw_diskinfo(f, boxes[1], create_block(name, selected, navigation), &disk_info);
+                    }
+                    WidgetType::Network => {
+                        draw_networkinfo(
+                            f,
+                            boxes[2],
+                            create_block(name, selected, navigation),
+                            &last_network_info,
+                            &network_info,
+                        );
+                    }
+                    WidgetType::CPU => {
+                        draw_cpuinfo(
+                            f,
+                            chunks[1],
+                            create_block(name, selected, navigation),
+                            &cpu_values,
+                            &core_values,
+                            &mut app,
+                        );
+                    }
+                    WidgetType::Processes => {
+                        draw_processesinfo(
+                            f,
+                            chunks[2],
+                            create_block(name, selected, navigation),
+                            &processes_info,
+                        );
+                    }
                 }
             }
-   
-            
-            let mut help_text;
-            if app.state == AppState::Navigation{
-                help_text = app.current_widget.get_help_text();
-            } else {
-                help_text = "ESC: navigation";
+
+            let mut help_text = "ESC: navigation/interaction, v:view/hide selected widget, ".to_string();
+
+            if app.show_selected_widget{
+                help_text += app.current_widget.get_help_text(); // TODO: make constant
             }
 
             // Draw help text
-            let help_paragraph = Paragraph::new(help_text).block(Block::default()).alignment(Alignment::Left);
+            let help_paragraph = Paragraph::new(help_text)
+                .block(Block::default())
+                .alignment(Alignment::Left);
             f.render_widget(help_paragraph, chunks[3]);
-            
         });
 
         // Handle events
         let event = input_handler.next();
-        
+
         if event.is_ok() {
-            let event = event.unwrap();
-            if let InputEvent::Input(input) = event{
-                match app.state {
-                    AppState::Interaction => {
-                        match input {
-                            Key::Ctrl('c') => {
-                                terminal.clear()?;
-                                break;
-                            }
-                            Key::Esc => {
-                                app.state = AppState::Navigation;
-                            }
-                            _ => {}
-                        };
+            let input = event.unwrap();
+            match app.state {
+                AppState::Interaction => {
+
+                    if app.show_selected_widget {
+                        match app.current_widget {
+                            WidgetType::Processes => {
+                                handle_processes_input(input, &mut app);
+                            }, 
+                            WidgetType::CPU => {
+                                handle_cpu_input(input, &mut app);
+                            },
+                            _ => {},
+                        }
                     }
 
-                    AppState::Navigation => {
-                        match input {
-                            Key::Ctrl('c') => {
-                                terminal.clear()?;
-                                break;
+                    match input {
+                        Key::Ctrl('c') => {
+                            terminal.clear()?;
+                            break;
+                        }
+                        Key::Char('v') => {
+                            app.show_selected_widget = !app.show_selected_widget;
+                        }
+                        Key::Esc => {
+                            app.state = AppState::Navigation;
+                        }
+                        _ => {}
+                    };
+                }
+
+                AppState::Navigation => {
+                    match input {
+                        Key::Ctrl('c') => {
+                            terminal.clear()?;
+                            break;
+                        }
+                        Key::Right => {
+                            let (id, _) = app.current_widget.get_value();
+                            if id < data_widgets.len() - 1 {
+                                app.current_widget = WidgetType::get_by_id(id + 1);
                             }
-                            Key::Right => {
-                                let (id, _) = app.current_widget.get_value();
-                                if id < data_widgets.len() - 1 {
-                                    app.current_widget = WidgetType::get_by_id(id + 1); 
-                                }
+                        }
+                        Key::Left => {
+                            let (id, _) = app.current_widget.get_value();
+                            if id > 0 {
+                                app.current_widget = WidgetType::get_by_id(id - 1);
                             }
-                            Key::Left => {
-                                let (id, _) = app.current_widget.get_value();
-                                if id > 0 {
-                                    app.current_widget = WidgetType::get_by_id(id - 1); 
-                                }
-                            }
-                            Key::Esc => {
-                                app.state = AppState::Interaction;
-                            }
-                            _ => {}
-                        };
-                    }
+                        }
+                        Key::Esc => {
+                            app.state = AppState::Interaction;
+                        }
+                        _ => {}
+                    };
                 }
             }
         }
@@ -302,15 +349,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn create_block(name: &str, selected: bool) -> Block{
+fn handle_cpu_input(key: Key, app: &mut AppLogic) {
+    match key {
+        Key::Char(' ') => app.show_all_cores = !app.show_all_cores,
+        _ => {},
+    };
+}
+
+fn handle_processes_input(key: Key, app: &mut AppLogic) {
+    match key {
+        Key::Right => {
+            println!("right pressed");
+        }
+        Key::Left => {
+        }
+        Key::Up=> {
+        }
+        Key::Down=> {
+        }
+        _ => {}
+    };
+}
+
+fn create_block(name: &str, selected: bool, navigation: bool) -> Block {
+    let mut color = Color::Cyan;
+    
+    if !navigation && selected {
+       color = Color::Yellow; 
+    }
+    
+
     let block = Block::default()
         .title(Span::styled(
             name,
             Style::default()
-                .fg(Color::Cyan)
+                .fg(color)
                 .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL);
+    
 
     if selected {
         return block.border_type(BorderType::Thick);
@@ -370,45 +447,55 @@ fn draw_meminfo<B: Backend>(f: &mut Frame<B>, rect: Rect, block: Block, mem_info
     f.render_widget(gauge_swap, block_chunks[1]);
 }
 
-fn draw_cpuinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, block: Block, data: &Vec<f64>, cores: &Vec<Vec<f64>>) {
+fn draw_cpuinfo<B: Backend>(
+    f: &mut Frame<B>,
+    rect: Rect,
+    block: Block,
+    data: &Vec<f64>,
+    cores: &Vec<Vec<f64>>,
+    app: &AppLogic,
+) {
     let mut datasets = Vec::new();
 
-    let mut core_values = Vec::new();
-    for core in cores {
-        let value = core
-            .iter()
-            .enumerate()
-            .map(|(i, &x)| ((i as f64), x))
-            .collect::<Vec<_>>();
-        core_values.push(value);
-    }
-
-    for i in 0..core_values.len() {
-        let h = (i * 40) % 360;
-        let mut color = Color::White;
-        if h < 60 {
-            color = Color::Rgb(255, (h % 255) as u8, 0);
-        } else if h < 120 {
-            color = Color::Rgb(255 - (h % 255) as u8, 255, 0);
-        } else if h < 180 {
-            color = Color::Rgb(0, 255, (h % 255) as u8);
-        } else if h < 240 {
-            color = Color::Rgb(0, 255 - (h % 255) as u8, 255);
-        } else if h < 300 {
-            color = Color::Rgb((h % 255) as u8, 0, 255);
-        } else if h < 360 {
-            color = Color::Rgb(255, 0, 255 - (h % 255) as u8);
+    let mut core_values = Vec::new(); //FIXME: ugly should fix
+    if app.show_all_cores {
+        for core in cores {
+            let value = core
+                .iter()
+                .enumerate()
+                .map(|(i, &x)| ((i as f64), x))
+                .collect::<Vec<_>>();
+            core_values.push(value);
         }
 
-        datasets.push(
-            Dataset::default()
-                .name(format!("cpu{}", i))
-                .marker(symbols::Marker::Braille)
-                .style(Style::default().fg(color))
-                .graph_type(GraphType::Line)
-                .data(&core_values[i]),
-        );
+        for i in 0..core_values.len() {
+            let h = (i * 40) % 360;
+            let mut color = Color::White;
+            if h < 60 {
+                color = Color::Rgb(255, (h % 255) as u8, 0);
+            } else if h < 120 {
+                color = Color::Rgb(255 - (h % 255) as u8, 255, 0);
+            } else if h < 180 {
+                color = Color::Rgb(0, 255, (h % 255) as u8);
+            } else if h < 240 {
+                color = Color::Rgb(0, 255 - (h % 255) as u8, 255);
+            } else if h < 300 {
+                color = Color::Rgb((h % 255) as u8, 0, 255);
+            } else if h < 360 {
+                color = Color::Rgb(255, 0, 255 - (h % 255) as u8);
+            }
+
+            datasets.push(
+                Dataset::default()
+                    .name(format!("cpu{}", i))
+                    .marker(symbols::Marker::Braille)
+                    .style(Style::default().fg(color))
+                    .graph_type(GraphType::Line)
+                    .data(&core_values[i]),
+            );
+        }
     }
+
 
     let v = data
         .iter()
@@ -440,7 +527,12 @@ fn draw_cpuinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, block: Block, data: &V
     f.render_widget(chart, rect);
 }
 
-fn draw_diskinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, block:Block, disk_info: &Vec<DiskInfo>) {
+fn draw_diskinfo<B: Backend>(
+    f: &mut Frame<B>,
+    rect: Rect,
+    block: Block,
+    disk_info: &Vec<DiskInfo>,
+) {
     //draw disk info TODO: divide into own function
     let header_cells = ["Partition", "Available", "In Use", "Total", "Used", "Mount"]
         .iter()
@@ -559,7 +651,6 @@ fn draw_networkinfo<B: Backend>(
     last_info: &NetworkInfo,
     current_info: &NetworkInfo,
 ) {
-
     if last_info.rec_bytes > current_info.rec_bytes {
         return;
     }

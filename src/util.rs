@@ -4,12 +4,8 @@ use std::thread;
 use termion::event::Key;
 use termion::input::TermRead;
 
-pub enum InputEvent<I> {
-    Input(I),
-}
-
 pub struct InputHandler {
-    rx: mpsc::Receiver<InputEvent<Key>>,
+    rx: mpsc::Receiver<Key>,
 }
 
 impl InputHandler {
@@ -21,14 +17,14 @@ impl InputHandler {
 
             for evt in stdin.keys() {
                 if let Ok(key) = evt {
-                    let _ = tx.send(InputEvent::Input(key));
+                    let _ = tx.send(key);
                 }
             }
         });
         InputHandler { rx: rx }
     }
 
-    pub fn next(&self) -> Result<InputEvent<Key>, mpsc::TryRecvError> {
+    pub fn next(&self) -> Result<Key, mpsc::TryRecvError> {
         self.rx.try_recv()
     }
 }
