@@ -3,6 +3,21 @@ use std::str;
 use std::sync::mpsc;
 use std::thread;
 use std::time;
+use termion::{event::Key};
+
+use tui::{
+    backend::{Backend, TermionBackend},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    symbols,
+    terminal::Frame,
+    text::{Span, Spans},
+    widgets::{
+        Axis, Block, BorderType, Borders, Cell, Chart, Dataset, Gauge, GraphType, Paragraph, Row,
+        Table, Wrap,
+    },
+    Terminal,
+};
 
 // equals the "df"-command output
 #[derive(Debug, Default)]
@@ -94,4 +109,106 @@ pub fn calc_disk_size(disk_size: usize) -> String {
     }*/
 
     size_string + SIZES[count]
+}
+
+pub struct DiskWidget {
+    disk_info: std::vec::Vec<DiskInfo>,
+    dc_thread: mpsc::Receiver<Vec<DiskInfo>>, 
+}
+
+impl DiskWidget {
+    pub fn new() -> Self {
+        Self {
+            disk_info: Default::default(),
+            dc_thread: init_data_collection_thread(),
+        }
+    }
+
+    pub fn update(&mut self) {
+        // Recv data from the data collector thread
+        
+        let result = self.dc_thread.try_recv();
+
+        if result.is_ok() {
+            self.disk_info = result.unwrap();
+        }
+    }
+
+    pub fn draw<B: Backend>(&self,
+        f: &mut Frame<B>,
+        rect: Rect,
+        block: Block,
+    ) {
+        //draw disk info TODO: divide into own function
+        let header_cells = ["Partition", "Available", "In Use", "Total", "Used", "Mount"]
+            .iter()
+            .map(|h| Cell::from(*h).style(Style::default().fg(Color::White)));
+        let header = Row::new(header_cells).height(1);
+        let rows = self.disk_info.iter().map(|disk| {
+            let mut cells = Vec::new();
+            cells.push(Cell::from(disk.filesystem.clone()));
+            cells.push(Cell::from(calc_disk_size(disk.available)));
+            cells.push(Cell::from(calc_disk_size(disk.used)));
+            cells.push(Cell::from(calc_disk_size(disk.total)));
+            cells.push(Cell::from(disk.used_percentage.clone()));
+            cells.push(Cell::from(disk.mountpoint.clone()));
+            Row::new(cells)
+        });
+        let sizing = &size_columns(rect.width);
+        let table = Table::new(rows)
+            .header(header)
+            .block(block)
+            .widths(sizing)
+            .column_spacing(2);
+        f.render_widget(table, rect);
+    }
+
+    pub fn handle_input(&mut self, key: Key) {
+        /*match key {
+            Key::Up => app.show_all_cores = !app.show_all_cores,
+            Key::Down => app.show_all_cores = !app.show_all_cores,
+            _ => {},
+        };*/
+    }
+}
+
+fn size_columns(area_width: u16) -> Vec<Constraint> {
+    let width = area_width - 2;
+    if width >= 39 + 10 {
+        vec![
+            Constraint::Length(9),
+            Constraint::Length(9),
+            Constraint::Length(6),
+            Constraint::Length(6),
+            Constraint::Length(4),
+            Constraint::Min(5),
+        ]
+    } else if width >= 34 + 8 {
+        vec![
+            Constraint::Length(9),
+            Constraint::Length(9),
+            Constraint::Length(6),
+            Constraint::Length(6),
+            Constraint::Length(4),
+        ]
+    } else if width >= 30 + 6 {
+        vec![
+            Constraint::Length(9),
+            Constraint::Length(9),
+            Constraint::Length(6),
+            Constraint::Length(6),
+        ]
+    } else if width >= 24 + 4 {
+        vec![
+            Constraint::Length(9),
+            Constraint::Length(9),
+            Constraint::Length(6),
+        ]
+    } else if width >= 18 + 2 {
+        vec![Constraint::Percentage(50), Constraint::Percentage(50)]
+    } else if width >= 9 {
+        vec![Constraint::Length(9)]
+    } else {
+        vec![]
+    }
 }

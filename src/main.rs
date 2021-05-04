@@ -84,7 +84,7 @@ impl WidgetType {
     fn get_help_text(&self) -> &str {
         match *self {
             WidgetType::Memory => "",
-            WidgetType::Disk => "",
+            WidgetType::Disk => "up: previous page, down: next page",
             WidgetType::Network => "",
             WidgetType::CPU => "SPACE: show/hide all cores",
             WidgetType::Processes => {
@@ -105,6 +105,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let backend = TermionBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    let mut disk_widget = disk::DiskWidget::new();
+    
     // Initialize app state
     let mut app = AppLogic {
         state: AppState::Interaction,
@@ -118,7 +120,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cpu_dc_thread = cpu::init_data_collection_thread();
     let mem_dc_thread = mem::init_data_collection_thread();
-    let disk_dc_thread = disk::init_data_collection_thread();
     let processes_dc_thread = processes::init_data_collection_thread();
     let network_dc_thread = network::init_data_collection_thread();
 
@@ -130,7 +131,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut processes_info: ProcessList = Default::default();
     let mut mem_info: MemInfo = Default::default();
-    let mut disk_info: std::vec::Vec<disk::DiskInfo> = Default::default();
+    //let mut disk_info: std::vec::Vec<disk::DiskInfo> = Default::default();
     let mut network_info: NetworkInfo = Default::default();
 
     let data_widgets = vec![
@@ -148,12 +149,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(a) => a,
             Err(_) => mem_info,
         };
+    
+        disk_widget.update();
 
-        // Recv data from the data collector thread
-        disk_info = match disk_dc_thread.try_recv() {
-            Ok(a) => a,
-            Err(_) => disk_info,
-        };
         // Recv data from the data collector thread
         let cpu_stats = match cpu_dc_thread.try_recv() {
             Ok(a) => a,
@@ -236,7 +234,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         draw_meminfo(f, boxes[0], create_block(name, selected, navigation), &mem_info);
                     }
                     WidgetType::Disk => {
-                        draw_diskinfo(f, boxes[1], create_block(name, selected, navigation), &disk_info);
+                        disk_widget.draw(f, boxes[1], create_block(name, selected, navigation));
+                        //draw_diskinfo(f, boxes[1], create_block(name, selected, navigation), &disk_info);
                     }
                     WidgetType::Network => {
                         draw_networkinfo(
@@ -297,6 +296,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             WidgetType::CPU => {
                                 handle_cpu_input(input, &mut app);
                             },
+                            WidgetType::Disk => {
+                                disk_widget.handle_input(input);
+                            },
                             _ => {},
                         }
                     }
@@ -336,6 +338,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         Key::Esc => {
                             app.state = AppState::Interaction;
+                            app.show_selected_widget = true;
                         }
                         _ => {}
                     };
@@ -527,36 +530,6 @@ fn draw_cpuinfo<B: Backend>(
     f.render_widget(chart, rect);
 }
 
-fn draw_diskinfo<B: Backend>(
-    f: &mut Frame<B>,
-    rect: Rect,
-    block: Block,
-    disk_info: &Vec<DiskInfo>,
-) {
-    //draw disk info TODO: divide into own function
-    let header_cells = ["Partition", "Available", "In Use", "Total", "Used", "Mount"]
-        .iter()
-        .map(|h| Cell::from(*h).style(Style::default().fg(Color::White)));
-    let header = Row::new(header_cells).height(1);
-    let rows = disk_info.iter().map(|disk| {
-        let mut cells = Vec::new();
-        cells.push(Cell::from(disk.filesystem.clone()));
-        cells.push(Cell::from(calc_disk_size(disk.available)));
-        cells.push(Cell::from(calc_disk_size(disk.used)));
-        cells.push(Cell::from(calc_disk_size(disk.total)));
-        cells.push(Cell::from(disk.used_percentage.clone()));
-        cells.push(Cell::from(disk.mountpoint.clone()));
-        Row::new(cells)
-    });
-    let sizing = &size_columns(rect.width);
-    let table = Table::new(rows)
-        .header(header)
-        .block(block)
-        .widths(sizing)
-        .column_spacing(2);
-
-    f.render_widget(table, rect);
-}
 
 fn draw_processesinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, block: Block, pl: &ProcessList) {
     let selected_style = Style::default().add_modifier(Modifier::REVERSED);
@@ -567,6 +540,9 @@ fn draw_processesinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, block: Block, pl
     .iter()
     .map(|h| Cell::from(*h));
     let header = Row::new(header_cells).style(header_style).height(1);
+
+    // add code to filter process list
+
     let rows = pl.processes.iter().map(|p| {
         let mut cells = Vec::new();
         cells.push(Cell::from(p.pid.to_string()));
