@@ -3,6 +3,16 @@ use std::sync::mpsc;
 use std::thread;
 use std::time;
 use std::{io::BufRead, io::BufReader};
+use termion::event::Key;
+use tui::{
+    backend::Backend,
+    layout::Rect,
+    terminal::Frame,
+    text::Spans,
+    widgets::{Block, Paragraph, Wrap},
+};
+
+use crate::util;
 
 const PROC_NET_DEV: &str = "/proc/net/dev";
 
@@ -57,27 +67,6 @@ pub fn get_network_io() -> Result<NetworkInfo, Box<dyn std::error::Error>> {
     Ok(network_info)
 }
 
-const SIZES: [&str; 5] = [" byte", " KiB", " MiB", " GiB", " TiB"];
-
-pub fn to_humanreadable(bytes: usize) -> String {
-    let mut count = 0;
-
-    if bytes < 1000 {
-        return bytes.to_string() + SIZES[count];
-    }
-
-    let mut size = bytes as f64;
-
-    while size > 1000.0 {
-        size = size / 1024.0;
-        count += 1;
-    }
-
-    let size_string = format!("{:.1}", size);
-
-    size_string + SIZES[count]
-}
-
 pub fn init_data_collection_thread() -> mpsc::Receiver<NetworkInfo> {
     let (tx, rx) = mpsc::channel();
     let dur = time::Duration::from_millis(500);
@@ -95,4 +84,68 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<NetworkInfo> {
     });
 
     rx
+}
+
+pub struct NetworkWidget {
+    current_info: NetworkInfo,
+    last_info: NetworkInfo,
+    dc_thread: mpsc::Receiver<NetworkInfo>,
+}
+
+impl NetworkWidget {
+    pub fn new() -> Self {
+        Self {
+            current_info: Default::default(),
+            last_info: Default::default(),
+            dc_thread: init_data_collection_thread(),
+        }
+    }
+
+    pub fn update(&mut self) {
+        // Recv data from the data collector thread
+        let network_info = self.dc_thread.try_recv();
+
+        if network_info.is_ok() {
+            //FIXME: uglyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+            self.last_info = NetworkInfo {
+                interface: self.current_info.interface.clone(),
+                rec_bytes: self.current_info.rec_bytes,
+                rec_packets: self.current_info.rec_packets,
+                rec_errs: self.current_info.rec_errs,
+                rec_drop: self.current_info.rec_drop,
+                send_bytes: self.current_info.send_bytes,
+                send_packets: self.current_info.send_packets,
+                send_errs: self.current_info.send_errs,
+                send_drop: self.current_info.send_drop,
+            };
+
+            self.current_info = network_info.unwrap();
+        }
+    }
+
+    pub fn draw<B: Backend>(&self, f: &mut Frame<B>, rect: Rect, block: Block) {
+        if self.last_info.rec_bytes > self.current_info.rec_bytes {
+            return;
+        }
+
+        let receiving =
+            util::to_humanreadable((self.current_info.rec_bytes - self.last_info.rec_bytes) * 2)
+                + "/s";
+        let sending =
+            util::to_humanreadable((self.current_info.send_bytes - self.last_info.send_bytes) * 2)
+                + "/s";
+        let total_received = util::to_humanreadable(self.current_info.rec_bytes);
+        let total_sent = util::to_humanreadable(self.current_info.send_bytes);
+
+        let text = vec![
+            Spans::from(format!("Receiving      {}", receiving)),
+            Spans::from(format!("Total Received {}", total_received)),
+            Spans::from(format!("Sending        {}", sending)),
+            Spans::from(format!("Total Sent     {}", total_sent)),
+        ];
+        let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
+        f.render_widget(paragraph, rect);
+    }
+
+    pub fn handle_input(&mut self, key: Key) {}
 }

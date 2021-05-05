@@ -28,3 +28,24 @@ impl InputHandler {
         self.rx.try_recv()
     }
 }
+
+const SIZES: [&str; 5] = [" byte", " KiB", " MiB", " GiB", " TiB"];
+
+pub fn to_humanreadable(bytes: usize) -> String {
+    let mut count = 0;
+
+    if bytes < 1000 {
+        return bytes.to_string() + SIZES[count];
+    }
+
+    let mut size = bytes as f64;
+
+    while size > 1000.0 {
+        size = size / 1024.0;
+        count += 1;
+    }
+
+    let size_string = format!("{:.1}", size);
+
+    size_string + SIZES[count]
+}

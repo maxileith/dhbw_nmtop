@@ -1,18 +1,12 @@
 use std::io;
-use std::vec::Vec;
 use std::{thread, time};
 use termion::{event::Key, raw::IntoRawMode};
 use tui::{
-    backend::{Backend, TermionBackend},
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    backend::TermionBackend,
+    layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    symbols,
-    terminal::Frame,
-    text::{Span, Spans},
-    widgets::{
-        Axis, Block, BorderType, Borders, Cell, Chart, Dataset, Gauge, GraphType, Paragraph, Row,
-        Table, Wrap,
-    },
+    text::Span,
+    widgets::{Block, BorderType, Borders, Paragraph},
     Terminal,
 };
 
@@ -23,18 +17,15 @@ mod cpu;
 
 // Module for reading memory usage data
 mod mem;
-use mem::{calc_ram_to_fit_size, MemInfo};
 
 // Module for reading disk usage data
 mod disk;
-use disk::{calc_disk_size, DiskInfo};
 
 // Module for managing processes
 mod processes;
-use processes::ProcessList;
+
 // Module for reading network usage
 mod network;
-use network::{to_humanreadable, NetworkInfo};
 
 #[derive(PartialEq)]
 enum AppState {
@@ -46,7 +37,6 @@ struct AppLogic {
     state: AppState,
     current_widget: WidgetType,
     show_selected_widget: bool,
-    show_all_cores: bool,
 }
 
 #[derive(PartialEq)]
@@ -87,9 +77,7 @@ impl WidgetType {
             WidgetType::Disk => "up: previous page, down: next page",
             WidgetType::Network => "",
             WidgetType::CPU => "SPACE: show/hide all cores",
-            WidgetType::Processes => {
-                "s:sort, left/right:  move header, up/down: select process"
-            }
+            WidgetType::Processes => "s:sort, left/right:  move header, up/down: select process",
         }
     }
 }
@@ -108,30 +96,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut disk_widget = disk::DiskWidget::new();
     let mut cpu_widget = cpu::CpuWidget::new();
     let mut mem_widget = mem::MemoryWidget::new();
-    
+    let mut processes_widget = processes::ProcessesWidget::new();
+    let mut network_widget = network::NetworkWidget::new();
+
     // Initialize app state
     let mut app = AppLogic {
         state: AppState::Interaction,
         current_widget: WidgetType::Memory,
         show_selected_widget: false,
-        show_all_cores: true,
     };
 
     // Initialize input handler
     let input_handler = util::InputHandler::new();
 
-    let mem_dc_thread = mem::init_data_collection_thread();
-    let processes_dc_thread = processes::init_data_collection_thread();
-    let network_dc_thread = network::init_data_collection_thread();
-
     let sleep_duration = time::Duration::from_millis(100);
-
-    let mut last_network_info: NetworkInfo = Default::default();
-
-    let mut processes_info: ProcessList = Default::default();
-    let mut mem_info: MemInfo = Default::default();
-    //let mut disk_info: std::vec::Vec<disk::DiskInfo> = Default::default();
-    let mut network_info: NetworkInfo = Default::default();
 
     let data_widgets = vec![
         WidgetType::Memory,
@@ -146,22 +124,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         mem_widget.update();
         cpu_widget.update();
-    
+        processes_widget.update();
         disk_widget.update();
-
-        // Recv data from the data collector thread
-        processes_info = match processes_dc_thread.try_recv() {
-            Ok(a) => a,
-            Err(_) => processes_info,
-        };
-
-        network_info = match network_dc_thread.try_recv() {
-            Ok(a) => {
-                last_network_info = network_info;
-                a
-            }
-            Err(_) => network_info,
-        };
+        network_widget.update();
 
         let _ = terminal.draw(|f| {
             let chunks = Layout::default()
@@ -197,7 +162,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let navigation = app.state == AppState::Navigation;
 
                 if !navigation {
-                    selected = selected && app.show_selected_widget; 
+                    selected = selected && app.show_selected_widget;
                 }
 
                 match dw {
@@ -208,35 +173,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         disk_widget.draw(f, boxes[1], create_block(name, selected, navigation));
                     }
                     WidgetType::Network => {
-                        draw_networkinfo(
-                            f,
-                            boxes[2],
-                            create_block(name, selected, navigation),
-                            &last_network_info,
-                            &network_info,
-                        );
+                        network_widget.draw(f, boxes[2], create_block(name, selected, navigation));
                     }
                     WidgetType::CPU => {
-                        cpu_widget.draw(
-                            f,
-                            chunks[1],
-                            create_block(name, selected, navigation),
-                        );
+                        cpu_widget.draw(f, chunks[1], create_block(name, selected, navigation));
                     }
                     WidgetType::Processes => {
-                        draw_processesinfo(
+                        processes_widget.draw(
                             f,
                             chunks[2],
                             create_block(name, selected, navigation),
-                            &processes_info,
                         );
                     }
                 }
             }
 
-            let mut help_text = "ESC: navigation/interaction, v:view/hide selected widget, ".to_string();
+            let mut help_text =
+                "ESC: navigation/interaction, v:view/hide selected widget, ".to_string();
 
-            if app.show_selected_widget{
+            if app.show_selected_widget {
                 help_text += app.current_widget.get_help_text(); // TODO: make constant
             }
 
@@ -254,19 +209,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let input = event.unwrap();
             match app.state {
                 AppState::Interaction => {
-
                     if app.show_selected_widget {
                         match app.current_widget {
                             WidgetType::Processes => {
-                                handle_processes_input(input, &mut app);
-                            }, 
+                                processes_widget.handle_input(input);
+                            }
                             WidgetType::CPU => {
                                 cpu_widget.handle_input(input);
-                            },
+                            }
                             WidgetType::Disk => {
                                 disk_widget.handle_input(input);
-                            },
-                            _ => {},
+                            }
+                            WidgetType::Network => {
+                                network_widget.handle_input(input);
+                            }
+                            WidgetType::Memory => {
+                                mem_widget.handle_input(input);
+                            }
                         }
                     }
 
@@ -319,116 +278,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn handle_processes_input(key: Key, app: &mut AppLogic) {
-    match key {
-        Key::Right => {
-            println!("right pressed");
-        }
-        Key::Left => {
-        }
-        Key::Up=> {
-        }
-        Key::Down=> {
-        }
-        _ => {}
-    };
-}
-
 fn create_block(name: &str, selected: bool, navigation: bool) -> Block {
     let mut color = Color::Cyan;
-    
+
     if !navigation && selected {
-       color = Color::Yellow; 
+        color = Color::Yellow;
     }
-    
 
     let block = Block::default()
         .title(Span::styled(
             name,
-            Style::default()
-                .fg(color)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL);
-    
 
     if selected {
         return block.border_type(BorderType::Thick);
     }
 
     block
-}
-
-fn draw_processesinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, block: Block, pl: &ProcessList) {
-    let selected_style = Style::default().add_modifier(Modifier::REVERSED);
-    let header_style = Style::default().bg(Color::DarkGray).fg(Color::White);
-    let header_cells = [
-        "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "VM", "SM", "CMD",
-    ]
-    .iter()
-    .map(|h| Cell::from(*h));
-    let header = Row::new(header_cells).style(header_style).height(1);
-
-    // add code to filter process list
-
-    let rows = pl.processes.iter().map(|p| {
-        let mut cells = Vec::new();
-        cells.push(Cell::from(p.pid.to_string()));
-        cells.push(Cell::from(p.parent_pid.to_string()));
-        cells.push(Cell::from(p.thread_group_id.to_string()));
-        cells.push(Cell::from(p.user.to_string()));
-        cells.push(Cell::from(p.umask.to_string()));
-        cells.push(Cell::from(p.threads.to_string()));
-        cells.push(Cell::from(p.name.to_string()));
-        cells.push(Cell::from(p.state.to_string()));
-        cells.push(Cell::from(to_humanreadable(p.virtual_memory_size * 1000)));
-        cells.push(Cell::from(to_humanreadable(p.swapped_memory * 1000)));
-        cells.push(Cell::from(p.command.to_string()));
-        Row::new(cells).height(1)
-    });
-    // println!("{}", rows.len());
-    let table = Table::new(rows)
-        .header(header)
-        .highlight_style(selected_style)
-        .widths(&[
-            Constraint::Length(7),
-            Constraint::Length(7),
-            Constraint::Length(7),
-            Constraint::Length(15),
-            Constraint::Length(6),
-            Constraint::Length(7),
-            Constraint::Length(30),
-            Constraint::Length(15),
-            Constraint::Length(9),
-            Constraint::Length(9),
-            Constraint::Min(1),
-        ])
-        .block(block);
-    f.render_widget(table, rect);
-}
-
-fn draw_networkinfo<B: Backend>(
-    f: &mut Frame<B>,
-    rect: Rect,
-    block: Block,
-    last_info: &NetworkInfo,
-    current_info: &NetworkInfo,
-) {
-    if last_info.rec_bytes > current_info.rec_bytes {
-        return;
-    }
-
-    let receiving = to_humanreadable((current_info.rec_bytes - last_info.rec_bytes) * 2) + "/s";
-    let sending = to_humanreadable((current_info.send_bytes - last_info.send_bytes) * 2) + "/s";
-    let total_received = to_humanreadable(current_info.rec_bytes);
-    let total_sent = to_humanreadable(current_info.send_bytes);
-
-    let text = vec![
-        Spans::from(format!("Receiving      {}", receiving)),
-        Spans::from(format!("Total Received {}", total_received)),
-        Spans::from(format!("Sending        {}", sending)),
-        Spans::from(format!("Total Sent     {}", total_sent)),
-    ];
-    let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
-    f.render_widget(paragraph, rect);
 }

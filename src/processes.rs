@@ -1,11 +1,20 @@
 use regex::Regex;
-use std::collections::VecDeque;
 use std::fs::{read_dir, File};
 use std::process::Command;
 use std::str;
 use std::sync::mpsc;
 use std::{io::BufRead, io::BufReader};
 use std::{thread, time};
+use termion::event::Key;
+use tui::{
+    backend::Backend,
+    layout::{Constraint, Rect},
+    style::{Color, Modifier, Style},
+    terminal::Frame,
+    widgets::{Block, Cell, Row, Table},
+};
+
+use crate::util;
 
 #[derive(Default, Debug)]
 pub struct ProcessList {
@@ -190,9 +199,84 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<ProcessList> {
 
     // Thread for the data collection
     let _thread = thread::spawn(move || loop {
-        tx.send(ProcessList::new());
+        let _ = tx.send(ProcessList::new());
         thread::sleep(dur);
     });
 
     rx
+}
+
+pub struct ProcessesWidget {
+    process_list: ProcessList,
+    dc_thread: mpsc::Receiver<ProcessList>,
+}
+
+impl ProcessesWidget {
+    pub fn new() -> Self {
+        Self {
+            process_list: Default::default(),
+            dc_thread: init_data_collection_thread(),
+        }
+    }
+
+    pub fn update(&mut self) {
+        // Recv data from the data collector thread
+        let processes_info = self.dc_thread.try_recv();
+
+        if processes_info.is_ok() {
+            self.process_list = processes_info.unwrap();
+        }
+    }
+
+    pub fn draw<B: Backend>(&self, f: &mut Frame<B>, rect: Rect, block: Block) {
+        let selected_style = Style::default().add_modifier(Modifier::REVERSED);
+        let header_style = Style::default().bg(Color::DarkGray).fg(Color::White);
+        let header_cells = [
+            "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "VM", "SM", "CMD",
+        ]
+        .iter()
+        .map(|h| Cell::from(*h));
+        let header = Row::new(header_cells).style(header_style).height(1);
+
+        // add code to filter process list
+
+        let rows = self.process_list.processes.iter().map(|p| {
+            let mut cells = Vec::new();
+            cells.push(Cell::from(p.pid.to_string()));
+            cells.push(Cell::from(p.parent_pid.to_string()));
+            cells.push(Cell::from(p.thread_group_id.to_string()));
+            cells.push(Cell::from(p.user.to_string()));
+            cells.push(Cell::from(p.umask.to_string()));
+            cells.push(Cell::from(p.threads.to_string()));
+            cells.push(Cell::from(p.name.to_string()));
+            cells.push(Cell::from(p.state.to_string()));
+            cells.push(Cell::from(util::to_humanreadable(
+                p.virtual_memory_size * 1000,
+            )));
+            cells.push(Cell::from(util::to_humanreadable(p.swapped_memory * 1000)));
+            cells.push(Cell::from(p.command.to_string()));
+            Row::new(cells).height(1)
+        });
+        // println!("{}", rows.len());
+        let table = Table::new(rows)
+            .header(header)
+            .highlight_style(selected_style)
+            .widths(&[
+                Constraint::Length(7),
+                Constraint::Length(7),
+                Constraint::Length(7),
+                Constraint::Length(15),
+                Constraint::Length(6),
+                Constraint::Length(7),
+                Constraint::Length(30),
+                Constraint::Length(15),
+                Constraint::Length(9),
+                Constraint::Length(9),
+                Constraint::Min(1),
+            ])
+            .block(block);
+        f.render_widget(table, rect);
+    }
+
+    pub fn handle_input(&mut self, key: Key) {}
 }

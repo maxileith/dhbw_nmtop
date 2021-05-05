@@ -3,17 +3,14 @@ use std::str;
 use std::sync::mpsc;
 use std::thread;
 use std::time;
-use termion::{event::Key};
+use termion::event::Key;
 
 use tui::{
-    backend::{Backend},
+    backend::Backend,
     layout::{Constraint, Rect},
     style::{Color, Style},
     terminal::Frame,
-    widgets::{
-        Block, Cell, Row,
-        Table,
-    },
+    widgets::{Block, Cell, Row, Table},
 };
 
 // equals the "df"-command output
@@ -110,7 +107,7 @@ pub fn calc_disk_size(disk_size: usize) -> String {
 
 pub struct DiskWidget {
     disk_info: std::vec::Vec<DiskInfo>,
-    dc_thread: mpsc::Receiver<Vec<DiskInfo>>, 
+    dc_thread: mpsc::Receiver<Vec<DiskInfo>>,
 }
 
 impl DiskWidget {
@@ -123,7 +120,7 @@ impl DiskWidget {
 
     pub fn update(&mut self) {
         // Recv data from the data collector thread
-        
+
         let result = self.dc_thread.try_recv();
 
         if result.is_ok() {
@@ -131,11 +128,7 @@ impl DiskWidget {
         }
     }
 
-    pub fn draw<B: Backend>(&self,
-        f: &mut Frame<B>,
-        rect: Rect,
-        block: Block,
-    ) {
+    pub fn draw<B: Backend>(&self, f: &mut Frame<B>, rect: Rect, block: Block) {
         //draw disk info TODO: divide into own function
         let header_cells = ["Partition", "Available", "In Use", "Total", "Used", "Mount"]
             .iter()
