@@ -158,12 +158,12 @@ impl DiskWidget {
 
     pub fn handle_input(&mut self, key: Key) {
         match key {
-            Key::Up => {
+            Key::Down => {
                 if self.item_index < self.disk_info.len() - 1 {
                     self.item_index += 1;
                 }
             }
-            Key::Down => {
+            Key::Up => {
                 if self.item_index > 0 {
                     self.item_index -= 1;
                 }

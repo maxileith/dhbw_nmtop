@@ -207,6 +207,7 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<ProcessList> {
 }
 
 pub struct ProcessesWidget {
+    item_index: usize,
     process_list: ProcessList,
     dc_thread: mpsc::Receiver<ProcessList>,
 }
@@ -214,6 +215,7 @@ pub struct ProcessesWidget {
 impl ProcessesWidget {
     pub fn new() -> Self {
         Self {
+            item_index: 0,
             process_list: Default::default(),
             dc_thread: init_data_collection_thread(),
         }
@@ -240,23 +242,28 @@ impl ProcessesWidget {
 
         // add code to filter process list
 
-        let rows = self.process_list.processes.iter().map(|p| {
-            let mut cells = Vec::new();
-            cells.push(Cell::from(p.pid.to_string()));
-            cells.push(Cell::from(p.parent_pid.to_string()));
-            cells.push(Cell::from(p.thread_group_id.to_string()));
-            cells.push(Cell::from(p.user.to_string()));
-            cells.push(Cell::from(p.umask.to_string()));
-            cells.push(Cell::from(p.threads.to_string()));
-            cells.push(Cell::from(p.name.to_string()));
-            cells.push(Cell::from(p.state.to_string()));
-            cells.push(Cell::from(util::to_humanreadable(
-                p.virtual_memory_size * 1000,
-            )));
-            cells.push(Cell::from(util::to_humanreadable(p.swapped_memory * 1000)));
-            cells.push(Cell::from(p.command.to_string()));
-            Row::new(cells).height(1)
-        });
+        let rows = self
+            .process_list
+            .processes
+            .iter()
+            .skip(self.item_index)
+            .map(|p| {
+                let mut cells = Vec::new();
+                cells.push(Cell::from(p.pid.to_string()));
+                cells.push(Cell::from(p.parent_pid.to_string()));
+                cells.push(Cell::from(p.thread_group_id.to_string()));
+                cells.push(Cell::from(p.user.to_string()));
+                cells.push(Cell::from(p.umask.to_string()));
+                cells.push(Cell::from(p.threads.to_string()));
+                cells.push(Cell::from(p.name.to_string()));
+                cells.push(Cell::from(p.state.to_string()));
+                cells.push(Cell::from(util::to_humanreadable(
+                    p.virtual_memory_size * 1000,
+                )));
+                cells.push(Cell::from(util::to_humanreadable(p.swapped_memory * 1000)));
+                cells.push(Cell::from(p.command.to_string()));
+                Row::new(cells).height(1)
+            });
         // println!("{}", rows.len());
         let table = Table::new(rows)
             .header(header)
@@ -278,5 +285,19 @@ impl ProcessesWidget {
         f.render_widget(table, rect);
     }
 
-    pub fn handle_input(&mut self, key: Key) {}
+    pub fn handle_input(&mut self, key: Key) {
+        match key {
+            Key::Down => {
+                if self.item_index < self.process_list.processes.len() - 1 {
+                    self.item_index += 1;
+                }
+            }
+            Key::Up => {
+                if self.item_index > 0 {
+                    self.item_index -= 1;
+                }
+            }
+            _ => {}
+        }
+    }
 }
