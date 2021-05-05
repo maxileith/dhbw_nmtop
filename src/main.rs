@@ -106,6 +106,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut disk_widget = disk::DiskWidget::new();
+    let mut cpu_widget = cpu::CpuWidget::new();
     
     // Initialize app state
     let mut app = AppLogic {
@@ -118,15 +119,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize input handler
     let input_handler = util::InputHandler::new();
 
-    let cpu_dc_thread = cpu::init_data_collection_thread();
     let mem_dc_thread = mem::init_data_collection_thread();
     let processes_dc_thread = processes::init_data_collection_thread();
     let network_dc_thread = network::init_data_collection_thread();
 
     let sleep_duration = time::Duration::from_millis(100);
 
-    let mut core_values = Vec::<Vec<f64>>::new();
-    let mut cpu_values = Vec::<f64>::new();
     let mut last_network_info: NetworkInfo = Default::default();
 
     let mut processes_info: ProcessList = Default::default();
@@ -149,14 +147,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(a) => a,
             Err(_) => mem_info,
         };
+
+        cpu_widget.update();
     
         disk_widget.update();
 
-        // Recv data from the data collector thread
-        let cpu_stats = match cpu_dc_thread.try_recv() {
-            Ok(a) => a,
-            Err(_) => vec![],
-        };
         // Recv data from the data collector thread
         processes_info = match processes_dc_thread.try_recv() {
             Ok(a) => a,
@@ -170,27 +165,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             Err(_) => network_info,
         };
-        // create cpu info
-        let mut counter = 0;
-        for b in cpu_stats {
-            if b.cpu_name == "cpu" {
-                if cpu_values.len() == 300 {
-                    cpu_values.remove(0);
-                }
-                cpu_values.push(b.utilization);
-            } else {
-                if core_values.len() > counter {
-                    if core_values[counter].len() == 300 {
-                        core_values[counter].remove(0);
-                    }
-                    core_values[counter].push(b.utilization);
-                } else {
-                    core_values.push(Vec::new());
-                    core_values[counter].push(b.utilization);
-                }
-                counter += 1
-            }
-        }
 
         let _ = terminal.draw(|f| {
             let chunks = Layout::default()
@@ -247,13 +221,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         );
                     }
                     WidgetType::CPU => {
-                        draw_cpuinfo(
+                        cpu_widget.draw(
                             f,
                             chunks[1],
                             create_block(name, selected, navigation),
-                            &cpu_values,
-                            &core_values,
-                            &mut app,
                         );
                     }
                     WidgetType::Processes => {
@@ -294,7 +265,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 handle_processes_input(input, &mut app);
                             }, 
                             WidgetType::CPU => {
-                                handle_cpu_input(input, &mut app);
+                                cpu_widget.handle_input(input);
                             },
                             WidgetType::Disk => {
                                 disk_widget.handle_input(input);
@@ -350,13 +321,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         thread::sleep(sleep_duration);
     }
     Ok(())
-}
-
-fn handle_cpu_input(key: Key, app: &mut AppLogic) {
-    match key {
-        Key::Char(' ') => app.show_all_cores = !app.show_all_cores,
-        _ => {},
-    };
 }
 
 fn handle_processes_input(key: Key, app: &mut AppLogic) {
@@ -450,85 +414,6 @@ fn draw_meminfo<B: Backend>(f: &mut Frame<B>, rect: Rect, block: Block, mem_info
     f.render_widget(gauge_swap, block_chunks[1]);
 }
 
-fn draw_cpuinfo<B: Backend>(
-    f: &mut Frame<B>,
-    rect: Rect,
-    block: Block,
-    data: &Vec<f64>,
-    cores: &Vec<Vec<f64>>,
-    app: &AppLogic,
-) {
-    let mut datasets = Vec::new();
-
-    let mut core_values = Vec::new(); //FIXME: ugly should fix
-    if app.show_all_cores {
-        for core in cores {
-            let value = core
-                .iter()
-                .enumerate()
-                .map(|(i, &x)| ((i as f64), x))
-                .collect::<Vec<_>>();
-            core_values.push(value);
-        }
-
-        for i in 0..core_values.len() {
-            let h = (i * 40) % 360;
-            let mut color = Color::White;
-            if h < 60 {
-                color = Color::Rgb(255, (h % 255) as u8, 0);
-            } else if h < 120 {
-                color = Color::Rgb(255 - (h % 255) as u8, 255, 0);
-            } else if h < 180 {
-                color = Color::Rgb(0, 255, (h % 255) as u8);
-            } else if h < 240 {
-                color = Color::Rgb(0, 255 - (h % 255) as u8, 255);
-            } else if h < 300 {
-                color = Color::Rgb((h % 255) as u8, 0, 255);
-            } else if h < 360 {
-                color = Color::Rgb(255, 0, 255 - (h % 255) as u8);
-            }
-
-            datasets.push(
-                Dataset::default()
-                    .name(format!("cpu{}", i))
-                    .marker(symbols::Marker::Braille)
-                    .style(Style::default().fg(color))
-                    .graph_type(GraphType::Line)
-                    .data(&core_values[i]),
-            );
-        }
-    }
-
-
-    let v = data
-        .iter()
-        .enumerate()
-        .map(|(i, &x)| ((i as f64), x))
-        .collect::<Vec<_>>();
-    datasets.push(
-        Dataset::default()
-            .name("cpu")
-            .marker(symbols::Marker::Braille)
-            .style(Style::default().fg(Color::White))
-            .graph_type(GraphType::Line)
-            .data(&v),
-    );
-
-    let chart = Chart::new(datasets)
-        .block(block)
-        .x_axis(Axis::default().bounds([0.0, 300.0]))
-        .y_axis(
-            Axis::default()
-                .style(Style::default().fg(Color::Gray))
-                .labels(vec![
-                    Span::styled("  0", Style::default().add_modifier(Modifier::BOLD)),
-                    Span::styled("100", Style::default().add_modifier(Modifier::BOLD)),
-                ])
-                .bounds([0.0, 100.0]),
-        );
-
-    f.render_widget(chart, rect);
-}
 
 
 fn draw_processesinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, block: Block, pl: &ProcessList) {
@@ -577,47 +462,6 @@ fn draw_processesinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, block: Block, pl
         ])
         .block(block);
     f.render_widget(table, rect);
-}
-
-fn size_columns(area_width: u16) -> Vec<Constraint> {
-    let width = area_width - 2;
-    if width >= 39 + 10 {
-        vec![
-            Constraint::Length(9),
-            Constraint::Length(9),
-            Constraint::Length(6),
-            Constraint::Length(6),
-            Constraint::Length(4),
-            Constraint::Min(5),
-        ]
-    } else if width >= 34 + 8 {
-        vec![
-            Constraint::Length(9),
-            Constraint::Length(9),
-            Constraint::Length(6),
-            Constraint::Length(6),
-            Constraint::Length(4),
-        ]
-    } else if width >= 30 + 6 {
-        vec![
-            Constraint::Length(9),
-            Constraint::Length(9),
-            Constraint::Length(6),
-            Constraint::Length(6),
-        ]
-    } else if width >= 24 + 4 {
-        vec![
-            Constraint::Length(9),
-            Constraint::Length(9),
-            Constraint::Length(6),
-        ]
-    } else if width >= 18 + 2 {
-        vec![Constraint::Percentage(50), Constraint::Percentage(50)]
-    } else if width >= 9 {
-        vec![Constraint::Length(9)]
-    } else {
-        vec![]
-    }
 }
 
 fn draw_networkinfo<B: Backend>(
