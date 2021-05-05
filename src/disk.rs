@@ -106,6 +106,7 @@ pub fn calc_disk_size(disk_size: usize) -> String {
 }
 
 pub struct DiskWidget {
+    item_index: usize,
     disk_info: std::vec::Vec<DiskInfo>,
     dc_thread: mpsc::Receiver<Vec<DiskInfo>>,
 }
@@ -113,6 +114,7 @@ pub struct DiskWidget {
 impl DiskWidget {
     pub fn new() -> Self {
         Self {
+            item_index: 0,
             disk_info: Default::default(),
             dc_thread: init_data_collection_thread(),
         }
@@ -134,7 +136,8 @@ impl DiskWidget {
             .iter()
             .map(|h| Cell::from(*h).style(Style::default().fg(Color::White)));
         let header = Row::new(header_cells).height(1);
-        let rows = self.disk_info.iter().map(|disk| {
+
+        let rows = self.disk_info.iter().skip(self.item_index).map(|disk| {
             let mut cells = Vec::new();
             cells.push(Cell::from(disk.filesystem.clone()));
             cells.push(Cell::from(calc_disk_size(disk.available)));
@@ -154,11 +157,19 @@ impl DiskWidget {
     }
 
     pub fn handle_input(&mut self, key: Key) {
-        /*match key {
-            Key::Up => app.show_all_cores = !app.show_all_cores,
-            Key::Down => app.show_all_cores = !app.show_all_cores,
-            _ => {},
-        };*/
+        match key {
+            Key::Up => {
+                if self.item_index < self.disk_info.len() - 1 {
+                    self.item_index += 1;
+                }
+            }
+            Key::Down => {
+                if self.item_index > 0 {
+                    self.item_index -= 1;
+                }
+            }
+            _ => {}
+        };
     }
 }
 
