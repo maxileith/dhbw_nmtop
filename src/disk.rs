@@ -6,17 +6,14 @@ use std::time;
 use termion::{event::Key};
 
 use tui::{
-    backend::{Backend, TermionBackend},
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    symbols,
+    backend::{Backend},
+    layout::{Constraint, Rect},
+    style::{Color, Style},
     terminal::Frame,
-    text::{Span, Spans},
     widgets::{
-        Axis, Block, BorderType, Borders, Cell, Chart, Dataset, Gauge, GraphType, Paragraph, Row,
-        Table, Wrap,
+        Block, Cell, Row,
+        Table,
     },
-    Terminal,
 };
 
 // equals the "df"-command output

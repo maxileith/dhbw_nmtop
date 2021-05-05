@@ -4,19 +4,15 @@ use std::fs::File;
 use std::sync::mpsc;
 use std::{io::BufRead, io::BufReader};
 use std::{thread, time};
-use termion::{event::Key};
+use termion::event::Key;
 use tui::{
-    backend::{Backend, TermionBackend},
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    backend::Backend,
+    layout::Rect,
     style::{Color, Modifier, Style},
     symbols,
     terminal::Frame,
-    text::{Span, Spans},
-    widgets::{
-        Axis, Block, BorderType, Borders, Cell, Chart, Dataset, Gauge, GraphType, Paragraph, Row,
-        Table, Wrap,
-    },
-    Terminal,
+    text::Span,
+    widgets::{Axis, Block, Chart, Dataset, GraphType},
 };
 
 /// Represents a result row of the /proc/stat content
@@ -185,7 +181,6 @@ pub struct CpuWidget {
     dc_thread: mpsc::Receiver<Vec<CpuUtilization>>,
 }
 
-
 // TODO: simplify code and refactor
 impl CpuWidget {
     pub fn new() -> Self {
@@ -266,7 +261,8 @@ impl CpuWidget {
             );
         }
 
-        let v = self.cpu_values
+        let v = self
+            .cpu_values
             .iter()
             .enumerate()
             .map(|(i, &x)| ((i as f64), x))
