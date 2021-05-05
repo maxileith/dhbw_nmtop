@@ -107,6 +107,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut disk_widget = disk::DiskWidget::new();
     let mut cpu_widget = cpu::CpuWidget::new();
+    let mut mem_widget = mem::MemoryWidget::new();
     
     // Initialize app state
     let mut app = AppLogic {
@@ -143,11 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     //let mut cpu_values = Vec::<f64>::new();
     terminal.clear()?;
     loop {
-        mem_info = match mem_dc_thread.try_recv() {
-            Ok(a) => a,
-            Err(_) => mem_info,
-        };
-
+        mem_widget.update();
         cpu_widget.update();
     
         disk_widget.update();
@@ -205,11 +202,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 match dw {
                     WidgetType::Memory => {
-                        draw_meminfo(f, boxes[0], create_block(name, selected, navigation), &mem_info);
+                        mem_widget.draw(f, boxes[0], create_block(name, selected, navigation));
                     }
                     WidgetType::Disk => {
                         disk_widget.draw(f, boxes[1], create_block(name, selected, navigation));
-                        //draw_diskinfo(f, boxes[1], create_block(name, selected, navigation), &disk_info);
                     }
                     WidgetType::Network => {
                         draw_networkinfo(
@@ -362,59 +358,6 @@ fn create_block(name: &str, selected: bool, navigation: bool) -> Block {
 
     block
 }
-
-fn draw_meminfo<B: Backend>(f: &mut Frame<B>, rect: Rect, block: Block, mem_info: &MemInfo) {
-    let block_chunks = Layout::default()
-        .constraints([Constraint::Length(2), Constraint::Length(2)])
-        .margin(1)
-        .split(rect);
-
-    // Render block
-    f.render_widget(block, rect);
-
-    if mem_info.mem_total == 0 || mem_info.swap_total == 0 {
-        return;
-    }
-
-    // calc mem infos
-    let mem_usage =
-        ((mem_info.mem_total - mem_info.mem_available) as f64) / (mem_info.mem_total as f64);
-    let mem_swap = mem_info.swap_cached as f64 / mem_info.swap_total as f64;
-    let label_mem = format!("{:.2}%", mem_usage * 100.0);
-    let title_mem = "Memory: ".to_string()
-        + &calc_ram_to_fit_size(mem_info.mem_total - mem_info.mem_available)
-        + " of "
-        + &calc_ram_to_fit_size(mem_info.mem_total);
-    let gauge_mem = Gauge::default()
-        .block(Block::default().title(title_mem))
-        .gauge_style(
-            Style::default()
-                .fg(Color::Cyan)
-                .bg(Color::Black)
-                .add_modifier(Modifier::ITALIC | Modifier::BOLD),
-        )
-        .label(label_mem)
-        .ratio(mem_usage);
-    f.render_widget(gauge_mem, block_chunks[0]);
-    let label_swap = format!("{:.2}%", mem_swap * 100.0);
-    let title_swap = "Swap: ".to_string()
-        + &calc_ram_to_fit_size(mem_info.swap_total - mem_info.swap_free)
-        + " of "
-        + &calc_ram_to_fit_size(mem_info.swap_total);
-    let gauge_swap = Gauge::default()
-        .block(Block::default().title(title_swap))
-        .gauge_style(
-            Style::default()
-                .fg(Color::Cyan)
-                .bg(Color::Black)
-                .add_modifier(Modifier::ITALIC | Modifier::BOLD),
-        )
-        .label(label_swap)
-        .ratio(mem_swap);
-    f.render_widget(gauge_swap, block_chunks[1]);
-}
-
-
 
 fn draw_processesinfo<B: Backend>(f: &mut Frame<B>, rect: Rect, block: Block, pl: &ProcessList) {
     let selected_style = Style::default().add_modifier(Modifier::REVERSED);
