@@ -178,6 +178,7 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<Vec<CpuUtilization>> {
 pub struct CpuWidget {
     core_values: std::vec::Vec<Vec<f64>>,
     cpu_values: std::vec::Vec<f64>,
+    show_all_cores: bool,
     dc_thread: mpsc::Receiver<Vec<CpuUtilization>>,
 }
 
@@ -187,6 +188,7 @@ impl CpuWidget {
         Self {
             core_values: Vec::<Vec<f64>>::new(),
             cpu_values: Vec::<f64>::new(),
+            show_all_cores: true,
             dc_thread: init_data_collection_thread(),
         }
     }
@@ -225,40 +227,43 @@ impl CpuWidget {
         let mut datasets = Vec::new();
 
         let mut values = Vec::new(); //FIXME: ugly should fix
-        for core in &self.core_values {
-            let value = core
-                .iter()
-                .enumerate()
-                .map(|(i, &x)| ((i as f64), x))
-                .collect::<Vec<_>>();
-            values.push(value);
-        }
 
-        for i in 0..values.len() {
-            let h = (i * 40) % 360;
-            let mut color = Color::White;
-            if h < 60 {
-                color = Color::Rgb(255, (h % 255) as u8, 0);
-            } else if h < 120 {
-                color = Color::Rgb(255 - (h % 255) as u8, 255, 0);
-            } else if h < 180 {
-                color = Color::Rgb(0, 255, (h % 255) as u8);
-            } else if h < 240 {
-                color = Color::Rgb(0, 255 - (h % 255) as u8, 255);
-            } else if h < 300 {
-                color = Color::Rgb((h % 255) as u8, 0, 255);
-            } else if h < 360 {
-                color = Color::Rgb(255, 0, 255 - (h % 255) as u8);
+        if self.show_all_cores {
+            for core in &self.core_values {
+                let value = core
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &x)| ((i as f64), x))
+                    .collect::<Vec<_>>();
+                values.push(value);
             }
 
-            datasets.push(
-                Dataset::default()
-                    .name(format!("cpu{}", i))
-                    .marker(symbols::Marker::Braille)
-                    .style(Style::default().fg(color))
-                    .graph_type(GraphType::Line)
-                    .data(&values[i]),
-            );
+            for i in 0..values.len() {
+                let h = (i * 40) % 360;
+                let mut color = Color::White;
+                if h < 60 {
+                    color = Color::Rgb(255, (h % 255) as u8, 0);
+                } else if h < 120 {
+                    color = Color::Rgb(255 - (h % 255) as u8, 255, 0);
+                } else if h < 180 {
+                    color = Color::Rgb(0, 255, (h % 255) as u8);
+                } else if h < 240 {
+                    color = Color::Rgb(0, 255 - (h % 255) as u8, 255);
+                } else if h < 300 {
+                    color = Color::Rgb((h % 255) as u8, 0, 255);
+                } else if h < 360 {
+                    color = Color::Rgb(255, 0, 255 - (h % 255) as u8);
+                }
+
+                datasets.push(
+                    Dataset::default()
+                        .name(format!("cpu{}", i))
+                        .marker(symbols::Marker::Braille)
+                        .style(Style::default().fg(color))
+                        .graph_type(GraphType::Line)
+                        .data(&values[i]),
+                );
+            }
         }
 
         let v = self
@@ -293,9 +298,9 @@ impl CpuWidget {
     }
 
     pub fn handle_input(&mut self, key: Key) {
-        /*match key {
-            Key::Char(' ') => app.show_all_cores = !app.show_all_cores,
-            _ => {},
-        };*/
+        match key {
+            Key::Char(' ') => self.show_all_cores = !self.show_all_cores,
+            _ => {}
+        };
     }
 }
