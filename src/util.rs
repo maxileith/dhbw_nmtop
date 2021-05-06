@@ -1,6 +1,6 @@
 use std::io;
 use std::sync::mpsc;
-use std::{thread, time::Instant, time::Duration};
+use std::{thread, time::Duration, time::Instant};
 use termion::event::Key;
 use termion::input::TermRead;
 
@@ -14,14 +14,14 @@ impl InputHandler {
 
         thread::spawn(move || {
             let stdin = io::stdin();
-            let mut previous_key = Key::Null; 
+            let mut previous_key = Key::Null;
             let mut counter = 0;
             let mut previous_time = Instant::now();
 
             for evt in stdin.keys() {
                 let m = previous_time.elapsed().as_millis();
-                
-                if m > 120 {
+
+                if m > 150 {
                     if let Ok(key) = evt {
                         let _ = tx.send(key);
                     }
