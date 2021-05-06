@@ -1,4 +1,5 @@
 use regex::Regex;
+use std::cmp::Ordering;
 use std::fs::{read_dir, File};
 use std::process::Command;
 use std::str;
@@ -11,7 +12,7 @@ use tui::{
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
     terminal::Frame,
-    widgets::{Block, Cell, Row, Table},
+    widgets::{Block, Cell, Row, Table, TableState},
 };
 
 use crate::util;
@@ -207,7 +208,11 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<ProcessList> {
 }
 
 pub struct ProcessesWidget {
+    table_state: TableState,
     item_index: usize,
+    sort_index: usize,
+    column_index: usize,
+    sort_descending: bool,
     process_list: ProcessList,
     dc_thread: mpsc::Receiver<ProcessList>,
 }
@@ -215,7 +220,11 @@ pub struct ProcessesWidget {
 impl ProcessesWidget {
     pub fn new() -> Self {
         Self {
+            table_state: TableState::default(),
             item_index: 0,
+            column_index: 0,
+            sort_index: 0,
+            sort_descending: true,
             process_list: Default::default(),
             dc_thread: init_data_collection_thread(),
         }
@@ -230,23 +239,104 @@ impl ProcessesWidget {
         }
     }
 
-    pub fn draw<B: Backend>(&self, f: &mut Frame<B>, rect: Rect, block: Block) {
-        let selected_style = Style::default().add_modifier(Modifier::REVERSED);
+    pub fn draw<B: Backend>(&mut self, f: &mut Frame<B>, rect: Rect, block: Block) {
+        let selected_style = Style::default()
+            .fg(Color::Yellow)
+            .bg(Color::DarkGray)
+            .add_modifier(Modifier::REVERSED);
         let header_style = Style::default().bg(Color::DarkGray).fg(Color::White);
         let header_cells = [
             "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "VM", "SM", "CMD",
         ]
         .iter()
-        .map(|h| Cell::from(*h));
+        .enumerate()
+        .map(|(i, h)| {
+            if i == self.column_index {
+                Cell::from(*h).style(Style::default().fg(Color::Yellow).bg(Color::DarkGray))
+            } else {
+                Cell::from(*h)
+            }
+        });
+
         let header = Row::new(header_cells).style(header_style).height(1);
 
-        // add code to filter process list
+        // sort list
+        match self.sort_index {
+            0 => {
+                self.process_list
+                    .processes
+                    .sort_by(|a, b| a.pid.partial_cmp(&b.pid).unwrap_or(Ordering::Equal));
+            }
+            1 => {
+                self.process_list.processes.sort_by(|a, b| {
+                    a.parent_pid
+                        .partial_cmp(&b.parent_pid)
+                        .unwrap_or(Ordering::Equal)
+                });
+            }
+            2 => {
+                self.process_list.processes.sort_by(|a, b| {
+                    a.thread_group_id
+                        .partial_cmp(&b.thread_group_id)
+                        .unwrap_or(Ordering::Equal)
+                });
+            }
+            3 => {
+                self.process_list
+                    .processes
+                    .sort_by(|a, b| a.user.partial_cmp(&b.user).unwrap_or(Ordering::Equal));
+            }
+            4 => {
+                self.process_list
+                    .processes
+                    .sort_by(|a, b| a.umask.partial_cmp(&b.umask).unwrap_or(Ordering::Equal));
+            }
+            5 => {
+                self.process_list
+                    .processes
+                    .sort_by(|a, b| a.threads.partial_cmp(&b.threads).unwrap_or(Ordering::Equal));
+            }
+            6 => {
+                self.process_list
+                    .processes
+                    .sort_by(|a, b| a.name.partial_cmp(&b.name).unwrap_or(Ordering::Equal));
+            }
+            7 => {
+                self.process_list
+                    .processes
+                    .sort_by(|a, b| a.state.partial_cmp(&b.state).unwrap_or(Ordering::Equal));
+            }
+            8 => {
+                self.process_list.processes.sort_by(|a, b| {
+                    a.virtual_memory_size
+                        .partial_cmp(&b.virtual_memory_size)
+                        .unwrap_or(Ordering::Equal)
+                });
+            }
+            9 => {
+                self.process_list.processes.sort_by(|a, b| {
+                    a.swapped_memory
+                        .partial_cmp(&b.swapped_memory)
+                        .unwrap_or(Ordering::Equal)
+                });
+            }
+            10 => {
+                self.process_list
+                    .processes
+                    .sort_by(|a, b| a.command.partial_cmp(&b.command).unwrap_or(Ordering::Equal));
+            }
+            _ => {}
+        }
+
+        if self.sort_descending {
+            self.process_list.processes.reverse();
+        }
 
         let rows = self
             .process_list
             .processes
             .iter()
-            .skip(self.item_index)
+            //.skip(self.item_index)
             .map(|p| {
                 let mut cells = Vec::new();
                 cells.push(Cell::from(p.pid.to_string()));
@@ -282,7 +372,7 @@ impl ProcessesWidget {
                 Constraint::Min(1),
             ])
             .block(block);
-        f.render_widget(table, rect);
+        f.render_stateful_widget(table, rect, &mut self.table_state);
     }
 
     pub fn handle_input(&mut self, key: Key) {
@@ -290,12 +380,31 @@ impl ProcessesWidget {
             Key::Down => {
                 if self.item_index < self.process_list.processes.len() - 1 {
                     self.item_index += 1;
+                    self.table_state.select(Some(self.item_index));
                 }
             }
             Key::Up => {
                 if self.item_index > 0 {
                     self.item_index -= 1;
+                    self.table_state.select(Some(self.item_index));
                 }
+            }
+            Key::Right => {
+                if self.column_index < 10 {
+                    self.column_index += 1;
+                }
+            }
+            Key::Left => {
+                if self.column_index > 0 {
+                    self.column_index -= 1;
+                }
+            }
+            Key::Char('s') => {
+                if self.sort_index == self.column_index {
+                    self.sort_descending = !self.sort_descending;
+                }
+
+                self.sort_index = self.column_index;
             }
             _ => {}
         }
