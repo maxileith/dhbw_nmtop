@@ -299,7 +299,7 @@ impl Process {
 pub fn init_data_collection_thread() -> mpsc::Receiver<ProcessList> {
     let (tx, rx) = mpsc::channel();
 
-    let dur = time::Duration::from_millis(5000);
+    let dur = time::Duration::from_millis(2500);
 
     let mut pl: ProcessList = ProcessList::new();
 
