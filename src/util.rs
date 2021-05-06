@@ -3,6 +3,7 @@ use std::sync::mpsc;
 use std::thread;
 use termion::event::Key;
 use termion::input::TermRead;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct InputHandler {
     rx: mpsc::Receiver<Key>,
@@ -48,4 +49,11 @@ pub fn to_humanreadable(bytes: usize) -> String {
     let size_string = format!("{:.1}", size);
 
     size_string + SIZES[count]
+}
+
+pub fn get_millis() -> usize {
+    let tmp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards");
+    tmp.as_secs() as usize * 1000 + tmp.subsec_nanos() as usize / 1_000_000 as usize
 }

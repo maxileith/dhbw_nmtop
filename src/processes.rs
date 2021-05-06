@@ -13,17 +13,50 @@ use tui::{
     terminal::Frame,
     widgets::{Block, Cell, Row, Table},
 };
+use std::collections::HashMap;
 
 use crate::util;
 
-#[derive(Default, Debug)]
+#[derive(Default, Clone, Copy)]
+pub struct CPUTime {
+    exec_time: usize,
+    millis: usize,
+}
+
+impl CPUTime {
+    pub fn new(exec_time: usize, millis: usize) -> Self {
+        let mut new: Self = Default::default();
+        new.exec_time = exec_time;
+        new.millis = millis;
+        new
+    }
+}
+
+#[derive(Default)]
 pub struct ProcessList {
+    cpu_times: HashMap<usize, CPUTime>,
     pub processes: Vec<Process>,
 }
 
 impl ProcessList {
+
     pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn clone(&mut self) -> Self {
         let mut new: Self = Default::default();
+        new.cpu_times = self.cpu_times.clone();
+        let mut processes: Vec<Process> = Default::default();
+        for p in self.processes.iter() {
+            processes.push(p.clone());
+        }
+        new.processes = processes;
+        new
+    }
+
+    pub fn update(&mut self) {
+        self.processes = Default::default();
 
         let re = Regex::new("^/proc/(?P<tid>[0-9]+)$").unwrap();
         let re2 = Regex::new("^/proc/[0-9]+/task/(?P<pid>[0-9]+)$").unwrap();
@@ -33,12 +66,12 @@ impl ProcessList {
         ///////////////////////////////////////
         let tg_dirs = match read_dir("/proc") {
             Ok(x) => x,
-            Err(_) => return Default::default(),
+            Err(_) => return,
         };
         for tg in tg_dirs {
             let tg = match tg {
                 Ok(x) => x,
-                Err(_) => return Default::default(),
+                Err(_) => continue,
             };
             let tg = tg.path();
             if tg.is_dir() {
@@ -52,12 +85,12 @@ impl ProcessList {
                     ///////////////////////////////////////
                     let p_dirs = match read_dir(format!("/proc/{}/task", tid)) {
                         Ok(x) => x,
-                        Err(_) => return Default::default(),
+                        Err(_) => continue,
                     };
                     for p in p_dirs {
                         let p = match p {
                             Ok(x) => x,
-                            Err(_) => return Default::default(),
+                            Err(_) => continue,
                         };
                         let p = p.path();
                         if p.is_dir() {
@@ -66,9 +99,11 @@ impl ProcessList {
                             if re2.is_match(p) {
                                 let pid =
                                     re2.captures(p).unwrap().get(1).map_or("", |m| m.as_str());
-                                new.processes.push(Process::new(
+
+                                self.processes.push(Process::new(
                                     pid.parse::<usize>().unwrap(),
                                     tid.parse::<usize>().unwrap(),
+                                    &mut self.cpu_times,
                                 ))
                             }
                         }
@@ -76,12 +111,10 @@ impl ProcessList {
                 }
             }
         }
-
-        new
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Process {
     pub pid: usize,
     pub name: String,
@@ -90,22 +123,30 @@ pub struct Process {
     pub parent_pid: usize,
     pub thread_group_id: usize,
     pub virtual_memory_size: usize,
-    pub virtual_memory_size_peak: usize,
     pub swapped_memory: usize,
     pub command: String,
     pub threads: usize,
     pub user: String,
+    pub nice: i8,
+    cpu_time: usize,
+    pub cpu_usage: f32,
 }
 
 impl Process {
-    pub fn new(pid: usize, thread_group_id: usize) -> Self {
+    pub fn new(pid: usize, thread_group_id: usize, cpu_times: &mut HashMap<usize, CPUTime>) -> Self {
         let mut new: Self = Default::default();
         new.pid = pid;
         new.thread_group_id = thread_group_id;
-        new.update_status();
-        new.update_command();
-        new.update_user();
+        new.update(cpu_times);
         new
+    }
+
+    pub fn update(&mut self, cpu_times: &mut HashMap<usize, CPUTime>) {
+        self.update_status();
+        self.update_command();
+        self.update_user();
+        self.update_stat();
+        self.update_cpu_usage(cpu_times);
     }
 
     fn update_status(&mut self) {
@@ -129,29 +170,24 @@ impl Process {
             let value: String = vec[1].trim().to_string();
             let name: &str = vec[0].trim();
 
+            // https://man7.org/linux/man-pages/man5/proc.5.html
             match name {
                 "Name" => (*self).name = value,
                 "Umask" => (*self).umask = value,
-                "State" => (*self).state = value,
-                "PPid" => (*self).parent_pid = value.parse::<usize>().unwrap(),
                 "VmSize" => {
                     (*self).virtual_memory_size =
                         value[0..value.len() - 3].parse::<usize>().unwrap()
-                }
-                "VmPeak" => {
-                    (*self).virtual_memory_size_peak =
-                        value[0..value.len() - 3].parse::<usize>().unwrap()
-                }
+                },
                 "VmSwap" => {
                     (*self).swapped_memory = value[0..value.len() - 3].parse::<usize>().unwrap()
-                }
-                "Threads" => (*self).threads = value.parse::<usize>().unwrap(),
+                },
                 _ => continue,
             }
         }
     }
 
     fn update_command(&mut self) {
+        // https://man7.org/linux/man-pages/man5/proc.5.html
         let path: String = format!("/proc/{}/task/{}/cmdline", self.thread_group_id, self.pid);
         let file = File::open(path);
         let filehandler = match file {
@@ -190,6 +226,73 @@ impl Process {
 
         (*self).user = response[1..response.len() - 1].to_string();
     }
+
+    fn update_stat(&mut self) {
+        // https://man7.org/linux/man-pages/man5/proc.5.html
+        let path: String = format!("/proc/{}/task/{}/stat", self.thread_group_id, self.pid);
+        let file = File::open(path);
+        let filehandler = match file {
+            Ok(f) => f,
+            Err(_) => return,
+        };
+        let mut reader = BufReader::new(filehandler);
+
+        let mut result = String::new();
+        let _ = reader.read_line(&mut result);
+
+        // 2180 (JS Helper) S 2078 2166 2166 0 -1 1077936192 1468600 6667190 0 4242 310 106 6477 18537 20 0 13 0 1944 4942053376 180392 18446744073709551615 1 1 0 0 0 0 0 16781312 83128 0 0 0 -1 18 0 0 0 0 0 0 0 0 0 0 0 0 0
+        // start behind ")" because Space in (JS Helper) does mess up things and information before is not needed anyway
+        let tmp: Vec<&str> = result.split(") ").collect();
+        let metrics: Vec<&str> = tmp[1].split(" ").collect();
+
+        (*self).state = metrics[0].to_string();
+        (*self).parent_pid = match metrics[1].parse::<usize>() {
+            Ok(x) => x,
+            Err(_) => 0,
+        };
+        (*self).nice = match metrics[16].parse::<i8>() {
+            Ok(x) => x,
+            Err(_) => 0,
+        };
+        (*self).threads = match metrics[17].parse::<usize>() {
+            Ok(x) => x,
+            Err(_) => 0,
+        };
+        let utime = match metrics[11].parse::<usize>() {
+            Ok(x) => x,
+            Err(_) => 0,
+        };
+        let stime = match metrics[12].parse::<usize>() {
+            Ok(x) => x,
+            Err(_) => 0,
+        };
+        (*self).cpu_time = utime + stime;
+    }
+
+    fn update_cpu_usage(&mut self, cpu_times: &mut HashMap<usize, CPUTime>) {
+        let old_cpu_times = match cpu_times.get(&self.pid) {
+            Some(x) => *x,
+            None => Default::default(),
+        };
+        
+        let seconds: f32 = (util::get_millis() - old_cpu_times.millis) as f32 / 1000.0;
+
+        let time = self.cpu_time - old_cpu_times.exec_time;
+
+        match cpu_times.get_mut(&self.pid) {
+            Some(x) => {
+                *x = CPUTime::new(self.cpu_time, util::get_millis());
+            },
+            None => {
+                cpu_times.insert(self.pid, CPUTime::new(self.cpu_time, util::get_millis()));
+                ()
+            },
+        }
+
+        let hertz = 100.0;
+
+        (*self).cpu_usage = 100.0 * ((time as f32 / hertz) / seconds);
+    }
 }
 
 pub fn init_data_collection_thread() -> mpsc::Receiver<ProcessList> {
@@ -197,9 +300,12 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<ProcessList> {
 
     let dur = time::Duration::from_millis(5000);
 
+    let mut pl: ProcessList = ProcessList::new();
+
     // Thread for the data collection
-    let _thread = thread::spawn(move || loop {
-        let _ = tx.send(ProcessList::new());
+    let _ = thread::spawn(move || loop {
+        pl.update();
+        let _ = tx.send(pl.clone());
         thread::sleep(dur);
     });
 
@@ -234,7 +340,7 @@ impl ProcessesWidget {
         let selected_style = Style::default().add_modifier(Modifier::REVERSED);
         let header_style = Style::default().bg(Color::DarkGray).fg(Color::White);
         let header_cells = [
-            "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "VM", "SM", "CMD",
+            "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "CPU", "VM", "SM", "CMD",
         ]
         .iter()
         .map(|h| Cell::from(*h));
@@ -257,6 +363,7 @@ impl ProcessesWidget {
                 cells.push(Cell::from(p.threads.to_string()));
                 cells.push(Cell::from(p.name.to_string()));
                 cells.push(Cell::from(p.state.to_string()));
+                cells.push(Cell::from(format!("{:.2}%", p.cpu_usage)));
                 cells.push(Cell::from(util::to_humanreadable(
                     p.virtual_memory_size * 1000,
                 )));
@@ -264,7 +371,6 @@ impl ProcessesWidget {
                 cells.push(Cell::from(p.command.to_string()));
                 Row::new(cells).height(1)
             });
-        // println!("{}", rows.len());
         let table = Table::new(rows)
             .header(header)
             .highlight_style(selected_style)
@@ -276,7 +382,8 @@ impl ProcessesWidget {
                 Constraint::Length(6),
                 Constraint::Length(7),
                 Constraint::Length(30),
-                Constraint::Length(15),
+                Constraint::Length(7),
+                Constraint::Length(9),
                 Constraint::Length(9),
                 Constraint::Length(9),
                 Constraint::Min(1),
