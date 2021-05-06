@@ -57,12 +57,13 @@ pub fn show_ram_usage() -> Result<MemInfo, Box<dyn std::error::Error>> {
         }
     }
 
-    mem_info.mem_total = mem_numbers[0].parse().unwrap();
-    mem_info.mem_free = mem_numbers[1].parse().unwrap();
-    mem_info.mem_available = mem_numbers[2].parse().unwrap();
-    mem_info.swap_cached = mem_numbers[3].parse().unwrap();
-    mem_info.swap_total = mem_numbers[4].parse().unwrap();
-    mem_info.swap_free = mem_numbers[5].parse().unwrap();
+    // match thread in error case -> returning Default::default.
+    mem_info.mem_total = mem_numbers[0].parse().unwrap_or_default();
+    mem_info.mem_free = mem_numbers[1].parse().unwrap_or_default();
+    mem_info.mem_available = mem_numbers[2].parse().unwrap_or_default();
+    mem_info.swap_cached = mem_numbers[3].parse().unwrap_or_default();
+    mem_info.swap_total = mem_numbers[4].parse().unwrap_or_default();
+    mem_info.swap_free = mem_numbers[5].parse().unwrap_or_default();
 
     Ok(mem_info)
 }
@@ -130,6 +131,7 @@ impl MemoryWidget {
 
         let mem_info = self.dc_thread.try_recv();
 
+        // check before so unwrap is safe
         if mem_info.is_ok() {
             self.mem_info = mem_info.unwrap();
         }

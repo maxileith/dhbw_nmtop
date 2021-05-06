@@ -51,16 +51,17 @@ pub fn get_network_io() -> Result<NetworkInfo, Box<dyn std::error::Error>> {
         // collect iterator into vector
         let row_values = row.split_whitespace().collect::<Vec<_>>();
 
+        // unwrap_or_default to match "normal" thread error, where a Default::default will be returned
         if row_values[1].parse::<usize>().unwrap() > network_info.rec_bytes {
             network_info.interface = row_values[0].to_string();
-            network_info.rec_bytes = row_values[1].parse().unwrap();
-            network_info.rec_packets = row_values[2].parse().unwrap();
-            network_info.rec_errs = row_values[3].parse().unwrap();
-            network_info.rec_drop = row_values[4].parse().unwrap();
-            network_info.send_bytes = row_values[9].parse().unwrap();
-            network_info.send_packets = row_values[10].parse().unwrap();
-            network_info.send_errs = row_values[11].parse().unwrap();
-            network_info.send_drop = row_values[12].parse().unwrap();
+            network_info.rec_bytes = row_values[1].parse().unwrap_or_default();
+            network_info.rec_packets = row_values[2].parse().unwrap_or_default();
+            network_info.rec_errs = row_values[3].parse().unwrap_or_default();
+            network_info.rec_drop = row_values[4].parse().unwrap_or_default();
+            network_info.send_bytes = row_values[9].parse().unwrap_or_default();
+            network_info.send_packets = row_values[10].parse().unwrap_or_default();
+            network_info.send_errs = row_values[11].parse().unwrap_or_default();
+            network_info.send_drop = row_values[12].parse().unwrap_or_default();
         }
     }
 
@@ -153,7 +154,7 @@ impl NetworkWidget {
                 Spans::from(format!("{}", sending)),
             ];
         }
-        
+
         let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
         f.render_widget(paragraph, rect);
     }
