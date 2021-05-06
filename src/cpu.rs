@@ -4,6 +4,16 @@ use std::fs::File;
 use std::sync::mpsc;
 use std::{io::BufRead, io::BufReader};
 use std::{thread, time};
+use termion::event::Key;
+use tui::{
+    backend::Backend,
+    layout::Rect,
+    style::{Color, Modifier, Style},
+    symbols,
+    terminal::Frame,
+    text::Span,
+    widgets::{Axis, Block, Chart, Dataset, GraphType},
+};
 
 /// Represents a result row of the /proc/stat content
 /// Time units are in USER_HZ or Jiffies
@@ -163,4 +173,134 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<Vec<CpuUtilization>> {
     });
 
     rx
+}
+
+pub struct CpuWidget {
+    core_values: std::vec::Vec<Vec<f64>>,
+    cpu_values: std::vec::Vec<f64>,
+    show_all_cores: bool,
+    dc_thread: mpsc::Receiver<Vec<CpuUtilization>>,
+}
+
+// TODO: simplify code and refactor
+impl CpuWidget {
+    pub fn new() -> Self {
+        Self {
+            core_values: Vec::<Vec<f64>>::new(),
+            cpu_values: Vec::<f64>::new(),
+            show_all_cores: true,
+            dc_thread: init_data_collection_thread(),
+        }
+    }
+
+    pub fn update(&mut self) {
+        // Recv data from the data collector thread
+        let cpu_stats = match self.dc_thread.try_recv() {
+            Ok(a) => a,
+            Err(_) => vec![],
+        };
+
+        // create cpu info
+        let mut counter = 0;
+        for b in cpu_stats {
+            if b.cpu_name == "cpu" {
+                if self.cpu_values.len() == 300 {
+                    self.cpu_values.remove(0);
+                }
+                self.cpu_values.push(b.utilization);
+            } else {
+                if self.core_values.len() > counter {
+                    if self.core_values[counter].len() == 300 {
+                        self.core_values[counter].remove(0);
+                    }
+                    self.core_values[counter].push(b.utilization);
+                } else {
+                    self.core_values.push(Vec::new());
+                    self.core_values[counter].push(b.utilization);
+                }
+                counter += 1
+            }
+        }
+    }
+
+    pub fn draw<B: Backend>(&self, f: &mut Frame<B>, rect: Rect, block: Block) {
+        let mut datasets = Vec::new();
+
+        let mut values = Vec::new(); //FIXME: ugly should fix
+
+        if self.show_all_cores {
+            for core in &self.core_values {
+                let value = core
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &x)| ((i as f64), x))
+                    .collect::<Vec<_>>();
+                values.push(value);
+            }
+
+            for i in 0..values.len() {
+                let h = (i * 40) % 360;
+                let mut color = Color::White;
+                if h < 60 {
+                    color = Color::Rgb(255, (h % 255) as u8, 0);
+                } else if h < 120 {
+                    color = Color::Rgb(255 - (h % 255) as u8, 255, 0);
+                } else if h < 180 {
+                    color = Color::Rgb(0, 255, (h % 255) as u8);
+                } else if h < 240 {
+                    color = Color::Rgb(0, 255 - (h % 255) as u8, 255);
+                } else if h < 300 {
+                    color = Color::Rgb((h % 255) as u8, 0, 255);
+                } else if h < 360 {
+                    color = Color::Rgb(255, 0, 255 - (h % 255) as u8);
+                }
+
+                datasets.push(
+                    Dataset::default()
+                        .name(format!("cpu{}", i))
+                        .marker(symbols::Marker::Braille)
+                        .style(Style::default().fg(color))
+                        .graph_type(GraphType::Line)
+                        .data(&values[i]),
+                );
+            }
+        }
+
+        let v = self
+            .cpu_values
+            .iter()
+            .enumerate()
+            .map(|(i, &x)| ((i as f64), x))
+            .collect::<Vec<_>>();
+        datasets.push(
+            Dataset::default()
+                .name("cpu")
+                .marker(symbols::Marker::Braille)
+                .style(Style::default().fg(Color::White))
+                .graph_type(GraphType::Line)
+                .data(&v),
+        );
+
+        let chart = Chart::new(datasets)
+            .block(block)
+            .x_axis(Axis::default().bounds([0.0, 300.0]))
+            .y_axis(
+                Axis::default()
+                    .style(Style::default().fg(Color::Gray))
+                    .labels(vec![
+                        Span::styled("  0", Style::default().add_modifier(Modifier::BOLD)),
+                        Span::styled("100", Style::default().add_modifier(Modifier::BOLD)),
+                    ])
+                    .bounds([0.0, 100.0]),
+            );
+
+        f.render_widget(chart, rect);
+    }
+
+    pub fn handle_input(&mut self, key: Key) {
+        match key {
+            Key::Char(' ') => self.show_all_cores = !self.show_all_cores,
+            _ => {}
+        };
+    }
 }
