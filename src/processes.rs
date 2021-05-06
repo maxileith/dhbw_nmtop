@@ -230,37 +230,7 @@ impl ProcessesWidget {
         }
     }
 
-    pub fn update(&mut self) {
-        // Recv data from the data collector thread
-        let processes_info = self.dc_thread.try_recv();
-
-        if processes_info.is_ok() {
-            self.process_list = processes_info.unwrap();
-        }
-    }
-
-    pub fn draw<B: Backend>(&mut self, f: &mut Frame<B>, rect: Rect, block: Block) {
-        let selected_style = Style::default()
-            .fg(Color::Yellow)
-            .bg(Color::DarkGray)
-            .add_modifier(Modifier::REVERSED);
-        let header_style = Style::default().bg(Color::DarkGray).fg(Color::White);
-        let header_cells = [
-            "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "VM", "SM", "CMD",
-        ]
-        .iter()
-        .enumerate()
-        .map(|(i, h)| {
-            if i == self.column_index {
-                Cell::from(*h).style(Style::default().fg(Color::Yellow).bg(Color::DarkGray))
-            } else {
-                Cell::from(*h)
-            }
-        });
-
-        let header = Row::new(header_cells).style(header_style).height(1);
-
-        // sort list
+    fn sort(&mut self) {
         match self.sort_index {
             0 => {
                 self.process_list
@@ -331,6 +301,38 @@ impl ProcessesWidget {
         if self.sort_descending {
             self.process_list.processes.reverse();
         }
+    }
+
+    pub fn update(&mut self) {
+        // Recv data from the data collector thread
+        let processes_info = self.dc_thread.try_recv();
+
+        if processes_info.is_ok() {
+            self.process_list = processes_info.unwrap();
+            self.sort();
+        }
+    }
+
+    pub fn draw<B: Backend>(&mut self, f: &mut Frame<B>, rect: Rect, block: Block) {
+        let selected_style = Style::default()
+            .fg(Color::Yellow)
+            .bg(Color::DarkGray)
+            .add_modifier(Modifier::REVERSED);
+        let header_style = Style::default().bg(Color::DarkGray).fg(Color::White);
+        let header_cells = [
+            "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "VM", "SM", "CMD",
+        ]
+        .iter()
+        .enumerate()
+        .map(|(i, h)| {
+            if i == self.column_index {
+                Cell::from(*h).style(Style::default().fg(Color::Yellow).bg(Color::DarkGray))
+            } else {
+                Cell::from(*h)
+            }
+        });
+
+        let header = Row::new(header_cells).style(header_style).height(1);
 
         let rows = self
             .process_list
@@ -405,6 +407,7 @@ impl ProcessesWidget {
                 }
 
                 self.sort_index = self.column_index;
+                self.sort();
             }
             _ => {}
         }
