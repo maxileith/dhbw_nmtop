@@ -30,7 +30,7 @@ impl InputHandler {
     }
 }
 
-const SIZES: [&str; 5] = [" byte", " KiB", " MiB", " GiB", " TiB"];
+const SIZES: [&str; 5] = [" B", " KiB", " MiB", " GiB", " TiB"];
 
 pub fn to_humanreadable(bytes: usize) -> String {
     let mut count = 0;

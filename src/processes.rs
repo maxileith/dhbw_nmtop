@@ -340,7 +340,7 @@ impl ProcessesWidget {
         let selected_style = Style::default().add_modifier(Modifier::REVERSED);
         let header_style = Style::default().bg(Color::DarkGray).fg(Color::White);
         let header_cells = [
-            "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "CPU", "VM", "SM", "CMD",
+            "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "Nice", "CPU", "VM", "SM", "CMD",
         ]
         .iter()
         .map(|h| Cell::from(*h));
@@ -355,19 +355,18 @@ impl ProcessesWidget {
             .skip(self.item_index)
             .map(|p| {
                 let mut cells = Vec::new();
-                cells.push(Cell::from(p.pid.to_string()));
-                cells.push(Cell::from(p.parent_pid.to_string()));
-                cells.push(Cell::from(p.thread_group_id.to_string()));
+                cells.push(Cell::from(format!("{: >7}", p.pid)));
+                cells.push(Cell::from(format!("{: >7}", p.parent_pid)));
+                cells.push(Cell::from(format!("{: >7}", p.thread_group_id)));
                 cells.push(Cell::from(p.user.to_string()));
-                cells.push(Cell::from(p.umask.to_string()));
-                cells.push(Cell::from(p.threads.to_string()));
+                cells.push(Cell::from(format!("{: >5}", p.umask)));
+                cells.push(Cell::from(format!("{: >7}", p.threads)));
                 cells.push(Cell::from(p.name.to_string()));
                 cells.push(Cell::from(p.state.to_string()));
-                cells.push(Cell::from(format!("{:.2}%", p.cpu_usage)));
-                cells.push(Cell::from(util::to_humanreadable(
-                    p.virtual_memory_size * 1000,
-                )));
-                cells.push(Cell::from(util::to_humanreadable(p.swapped_memory * 1000)));
+                cells.push(Cell::from(format!("{: >4}", p.nice)));
+                cells.push(Cell::from(format!("{: >7}", format!("{:3.2}%", p.cpu_usage))));
+                cells.push(Cell::from(format!("{: >9}", util::to_humanreadable(p.virtual_memory_size * 1000))));
+                cells.push(Cell::from(format!("{: >9}", util::to_humanreadable(p.swapped_memory * 1000))));
                 cells.push(Cell::from(p.command.to_string()));
                 Row::new(cells).height(1)
             });
@@ -375,15 +374,16 @@ impl ProcessesWidget {
             .header(header)
             .highlight_style(selected_style)
             .widths(&[
-                Constraint::Length(7),
-                Constraint::Length(7),
-                Constraint::Length(7),
+                Constraint::Length(8),
+                Constraint::Length(8),
+                Constraint::Length(8),
                 Constraint::Length(15),
                 Constraint::Length(6),
                 Constraint::Length(7),
                 Constraint::Length(30),
-                Constraint::Length(7),
-                Constraint::Length(9),
+                Constraint::Length(6),
+                Constraint::Length(5),
+                Constraint::Length(8),
                 Constraint::Length(9),
                 Constraint::Length(9),
                 Constraint::Min(1),
