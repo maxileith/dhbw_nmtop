@@ -297,6 +297,9 @@ impl ProcessesWidget {
                     self.item_index -= 1;
                 }
             }
+            Key::Char('k') => {
+                util::kill_process(self.process_list.processes[self.item_index].pid)
+            }
             _ => {}
         }
     }
