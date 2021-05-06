@@ -1,4 +1,5 @@
 use std::io;
+use std::process::Command;
 use std::sync::mpsc;
 use std::thread;
 use termion::event::Key;
@@ -48,4 +49,24 @@ pub fn to_humanreadable(bytes: usize) -> String {
     let size_string = format!("{:.1}", size);
 
     size_string + SIZES[count]
+}
+
+pub fn kill_process(pid: usize) {
+    let pid_string = &pid.to_string();
+    Command::new("kill")
+        .args(&["-9", pid_string])
+        .output()
+        .expect("failed to kill process");
+}
+
+pub fn update_niceness(pid: usize, new_niceness: i8) {
+    // niceness is measured between -20 and 19
+    if new_niceness >= -20 && new_niceness <= 19 {
+        let pid_string = &pid.to_string();
+        let niceness_string = &new_niceness.to_string();
+        Command::new("renice")
+            .args(&["-n", niceness_string, "-p", pid_string])
+            .output()
+            .expect("failed adjust niceness");
+    }
 }
