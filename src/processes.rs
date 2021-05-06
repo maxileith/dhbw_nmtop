@@ -376,6 +376,7 @@ impl ProcessesWidget {
                         self.process_list.processes[self.item_index].pid,
                         input_value,
                     );
+                    self.input.clear();
                     self.popup_open = false;
                 }
                 Key::Char('c') => {
@@ -388,6 +389,7 @@ impl ProcessesWidget {
                     }
                 }
                 Key::Esc => {
+                    self.input.clear();
                     self.popup_open = false;
                 }
                 _ => {}
