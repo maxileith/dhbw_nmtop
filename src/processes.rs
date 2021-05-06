@@ -384,19 +384,33 @@ impl ProcessesWidget {
             }
             8 => {
                 self.process_list.processes.sort_by(|a, b| {
+                    a.nice
+                        .partial_cmp(&b.nice)
+                        .unwrap_or(Ordering::Equal)
+                });
+            }
+            9 => {
+                self.process_list.processes.sort_by(|a, b| {
+                    a.cpu_usage
+                        .partial_cmp(&b.cpu_usage)
+                        .unwrap_or(Ordering::Equal)
+                });
+            }
+            10 => {
+                self.process_list.processes.sort_by(|a, b| {
                     a.virtual_memory_size
                         .partial_cmp(&b.virtual_memory_size)
                         .unwrap_or(Ordering::Equal)
                 });
             }
-            9 => {
+            11 => {
                 self.process_list.processes.sort_by(|a, b| {
                     a.swapped_memory
                         .partial_cmp(&b.swapped_memory)
                         .unwrap_or(Ordering::Equal)
                 });
             }
-            10 => {
+            12 => {
                 self.process_list
                     .processes
                     .sort_by(|a, b| a.command.partial_cmp(&b.command).unwrap_or(Ordering::Equal));
