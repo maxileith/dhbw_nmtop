@@ -191,7 +191,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut help_text =
                 "ESC: navigation/interaction, v:view/hide selected widget, ".to_string();
 
-            if app.show_selected_widget {
+            if app.show_selected_widget && app.state == AppState::Interaction {
                 help_text += app.current_widget.get_help_text(); // TODO: make constant
             }
 
