@@ -3,6 +3,14 @@ use std::sync::mpsc;
 use std::thread;
 use std::time;
 use std::{io::BufRead, io::BufReader};
+use termion::event::Key;
+use tui::{
+    backend::Backend,
+    layout::{Constraint, Layout, Rect},
+    style::{Color, Modifier, Style},
+    terminal::Frame,
+    widgets::{Block, Gauge},
+};
 
 #[derive(Default, Debug)]
 pub struct MemInfo {
@@ -78,7 +86,7 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<MemInfo> {
     rx
 }
 
-const SIZES: [&str; 4] = ["K", "M", "G", "T"];
+const SIZES: [&str; 4] = [" KiB", " MiB", " GiB", " TiB"];
 
 pub fn calc_ram_to_fit_size(mem_size: u32) -> String {
     let mut count = 0;
@@ -102,4 +110,82 @@ pub fn calc_ram_to_fit_size(mem_size: u32) -> String {
     }*/
 
     size_string + SIZES[count]
+}
+
+pub struct MemoryWidget {
+    mem_info: MemInfo,
+    dc_thread: mpsc::Receiver<MemInfo>,
+}
+
+impl MemoryWidget {
+    pub fn new() -> Self {
+        Self {
+            mem_info: Default::default(),
+            dc_thread: init_data_collection_thread(),
+        }
+    }
+
+    pub fn update(&mut self) {
+        // Recv data from the data collector thread
+
+        let mem_info = self.dc_thread.try_recv();
+
+        if mem_info.is_ok() {
+            self.mem_info = mem_info.unwrap();
+        }
+    }
+
+    pub fn draw<B: Backend>(&self, f: &mut Frame<B>, rect: Rect, block: Block) {
+        let block_chunks = Layout::default()
+            .constraints([Constraint::Length(2), Constraint::Length(2)])
+            .margin(1)
+            .split(rect);
+
+        // Render block
+        f.render_widget(block, rect);
+
+        if self.mem_info.mem_total == 0 || self.mem_info.swap_total == 0 {
+            return;
+        }
+
+        // calc mem infos
+        let mem_usage = ((self.mem_info.mem_total - self.mem_info.mem_available) as f64)
+            / (self.mem_info.mem_total as f64);
+        let mem_swap = self.mem_info.swap_cached as f64 / self.mem_info.swap_total as f64;
+        let label_mem = format!("{:.2}%", mem_usage * 100.0);
+        let title_mem = "Memory: ".to_string()
+            + &calc_ram_to_fit_size(self.mem_info.mem_total - self.mem_info.mem_available)
+            + " of "
+            + &calc_ram_to_fit_size(self.mem_info.mem_total);
+        let gauge_mem = Gauge::default()
+            .block(Block::default().title(title_mem))
+            .gauge_style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .bg(Color::Black)
+                    .add_modifier(Modifier::ITALIC | Modifier::BOLD),
+            )
+            .label(label_mem)
+            .ratio(mem_usage);
+        f.render_widget(gauge_mem, block_chunks[0]);
+
+        let label_swap = format!("{:.2}%", mem_swap * 100.0);
+        let title_swap = "Swap: ".to_string()
+            + &calc_ram_to_fit_size(self.mem_info.swap_total - self.mem_info.swap_free)
+            + " of "
+            + &calc_ram_to_fit_size(self.mem_info.swap_total);
+        let gauge_swap = Gauge::default()
+            .block(Block::default().title(title_swap))
+            .gauge_style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .bg(Color::Black)
+                    .add_modifier(Modifier::ITALIC | Modifier::BOLD),
+            )
+            .label(label_swap)
+            .ratio(mem_swap);
+        f.render_widget(gauge_swap, block_chunks[1]);
+    }
+
+    pub fn handle_input(&mut self, key: Key) {}
 }
