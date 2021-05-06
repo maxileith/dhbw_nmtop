@@ -8,10 +8,11 @@ use std::{thread, time};
 use termion::event::Key;
 use tui::{
     backend::Backend,
-    layout::{Constraint, Rect},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     terminal::Frame,
-    widgets::{Block, Cell, Row, Table},
+    text::Spans,
+    widgets::{Block, Cell, Row, Table, Borders, Paragraph, Wrap},
 };
 
 use crate::util;
@@ -210,6 +211,8 @@ pub struct ProcessesWidget {
     item_index: usize,
     process_list: ProcessList,
     dc_thread: mpsc::Receiver<ProcessList>,
+    popup_open: bool,
+    input: String,
 }
 
 impl ProcessesWidget {
@@ -218,6 +221,8 @@ impl ProcessesWidget {
             item_index: 0,
             process_list: Default::default(),
             dc_thread: init_data_collection_thread(),
+            popup_open: false,
+            input: String::from(""),
         }
     }
 
@@ -231,76 +236,140 @@ impl ProcessesWidget {
     }
 
     pub fn draw<B: Backend>(&self, f: &mut Frame<B>, rect: Rect, block: Block) {
-        let selected_style = Style::default().add_modifier(Modifier::REVERSED);
-        let header_style = Style::default().bg(Color::DarkGray).fg(Color::White);
-        let header_cells = [
-            "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "VM", "SM", "CMD",
-        ]
-        .iter()
-        .map(|h| Cell::from(*h));
-        let header = Row::new(header_cells).style(header_style).height(1);
-
-        // add code to filter process list
-
-        let rows = self
-            .process_list
-            .processes
+        if !self.popup_open {
+            let selected_style = Style::default().add_modifier(Modifier::REVERSED);
+            let header_style = Style::default().bg(Color::DarkGray).fg(Color::White);
+            let header_cells = [
+                "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "VM", "SM",
+                "CMD",
+            ]
             .iter()
-            .skip(self.item_index)
-            .map(|p| {
-                let mut cells = Vec::new();
-                cells.push(Cell::from(p.pid.to_string()));
-                cells.push(Cell::from(p.parent_pid.to_string()));
-                cells.push(Cell::from(p.thread_group_id.to_string()));
-                cells.push(Cell::from(p.user.to_string()));
-                cells.push(Cell::from(p.umask.to_string()));
-                cells.push(Cell::from(p.threads.to_string()));
-                cells.push(Cell::from(p.name.to_string()));
-                cells.push(Cell::from(p.state.to_string()));
-                cells.push(Cell::from(util::to_humanreadable(
-                    p.virtual_memory_size * 1000,
-                )));
-                cells.push(Cell::from(util::to_humanreadable(p.swapped_memory * 1000)));
-                cells.push(Cell::from(p.command.to_string()));
-                Row::new(cells).height(1)
-            });
-        // println!("{}", rows.len());
-        let table = Table::new(rows)
-            .header(header)
-            .highlight_style(selected_style)
-            .widths(&[
-                Constraint::Length(7),
-                Constraint::Length(7),
-                Constraint::Length(7),
-                Constraint::Length(15),
-                Constraint::Length(6),
-                Constraint::Length(7),
-                Constraint::Length(30),
-                Constraint::Length(15),
-                Constraint::Length(9),
-                Constraint::Length(9),
-                Constraint::Min(1),
-            ])
-            .block(block);
-        f.render_widget(table, rect);
+            .map(|h| Cell::from(*h));
+            let header = Row::new(header_cells).style(header_style).height(1);
+
+            // add code to filter process list
+
+            let rows = self
+                .process_list
+                .processes
+                .iter()
+                .skip(self.item_index)
+                .map(|p| {
+                    let mut cells = Vec::new();
+                    cells.push(Cell::from(p.pid.to_string()));
+                    cells.push(Cell::from(p.parent_pid.to_string()));
+                    cells.push(Cell::from(p.thread_group_id.to_string()));
+                    cells.push(Cell::from(p.user.to_string()));
+                    cells.push(Cell::from(p.umask.to_string()));
+                    cells.push(Cell::from(p.threads.to_string()));
+                    cells.push(Cell::from(p.name.to_string()));
+                    cells.push(Cell::from(p.state.to_string()));
+                    cells.push(Cell::from(util::to_humanreadable(
+                        p.virtual_memory_size * 1000,
+                    )));
+                    cells.push(Cell::from(util::to_humanreadable(p.swapped_memory * 1000)));
+                    cells.push(Cell::from(p.command.to_string()));
+                    Row::new(cells).height(1)
+                });
+            // println!("{}", rows.len());
+            let table = Table::new(rows)
+                .header(header)
+                .highlight_style(selected_style)
+                .widths(&[
+                    Constraint::Length(7),
+                    Constraint::Length(7),
+                    Constraint::Length(7),
+                    Constraint::Length(15),
+                    Constraint::Length(6),
+                    Constraint::Length(7),
+                    Constraint::Length(30),
+                    Constraint::Length(15),
+                    Constraint::Length(9),
+                    Constraint::Length(9),
+                    Constraint::Min(1),
+                ])
+                .block(block);
+            f.render_widget(table, rect);
+
+        } else {
+            let vertical = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(
+                    [
+                        Constraint::Length(6),
+                        Constraint::Length(6),
+                        Constraint::Min(1),
+                    ]
+                    .as_ref(),
+                )
+                .split(rect);
+
+            let popup = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(
+                    [
+                        Constraint::Percentage(30),
+                        Constraint::Percentage(40),
+                        Constraint::Percentage(30),
+                    ]
+                    .as_ref(),
+                )
+                .split(vertical[1]);
+
+            let text = vec![
+                Spans::from(format!("{}", self.input)),
+                Spans::default(),
+                Spans::from("(C)ancel"),
+                Spans::from("Press Enter to apply"),
+            ];
+            
+            let block = Block::default().title("Niceness").borders(Borders::ALL);
+            let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
+            f.render_widget(paragraph, popup[1]);
+        }
     }
 
     pub fn handle_input(&mut self, key: Key) {
-        match key {
-            Key::Down => {
-                if self.item_index < self.process_list.processes.len() - 1 {
-                    self.item_index += 1;
+        if !self.popup_open {
+            match key {
+                Key::Down => {
+                    if self.item_index < self.process_list.processes.len() - 1 {
+                        self.item_index += 1;
+                    }
                 }
-            }
-            Key::Up => {
-                if self.item_index > 0 {
-                    self.item_index -= 1;
+                Key::Up => {
+                    if self.item_index > 0 {
+                        self.item_index -= 1;
+                    }
                 }
+                Key::Char('k') => util::kill_process(self.process_list.processes[self.item_index].pid),
+                Key::Char('n') => {
+                    self.popup_open = !self.popup_open;
+                }
+                _ => {}
             }
-            Key::Char('k') => {
-                util::kill_process(self.process_list.processes[self.item_index].pid)
+        } else {
+            match key {
+                Key::Backspace => {
+                    self.input.pop();
+                }
+                Key::Char('\n') => {
+                    let input_value = self.input.parse().unwrap_or_default();
+                    util::update_niceness(self.process_list.processes[self.item_index].pid, input_value);
+                    self.popup_open = false;
+                }
+                Key::Char('c') => {
+                    self.input.clear();
+                    self.popup_open = false;
+                }
+                Key::Char(key) => {
+                    self.input.push(key)
+                }
+                Key::Esc => {
+                    self.popup_open = false;
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
 }
