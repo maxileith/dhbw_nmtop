@@ -576,7 +576,6 @@ impl ProcessesWidget {
                 if self.column_index < 10 {
                     self.column_index += 1;
                 }
-                _ => {}
             }
             Key::Char('k') => {
                 util::kill_process(self.process_list.processes[self.item_index].pid)
@@ -626,6 +625,7 @@ impl ProcessesWidget {
                     self.input.clear();
                     self.popup_open = false;
                 }
+                _ => {}
             }
         }
     }
