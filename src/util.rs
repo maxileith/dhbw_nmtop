@@ -1,7 +1,8 @@
 use std::io;
 use std::process::Command;
 use std::sync::mpsc;
-use std::thread;
+use std::time::{SystemTime, UNIX_EPOCH};
+use std::{thread, time::Duration, time::Instant};
 use termion::event::Key;
 use termion::input::TermRead;
 
@@ -15,10 +16,18 @@ impl InputHandler {
 
         thread::spawn(move || {
             let stdin = io::stdin();
+            let mut previous_key = Key::Null;
+            let mut counter = 0;
+            let mut previous_time = Instant::now();
 
             for evt in stdin.keys() {
-                if let Ok(key) = evt {
-                    let _ = tx.send(key);
+                let m = previous_time.elapsed().as_millis();
+
+                if m > 150 {
+                    if let Ok(key) = evt {
+                        let _ = tx.send(key);
+                    }
+                    previous_time = Instant::now();
                 }
             }
         });
@@ -30,7 +39,7 @@ impl InputHandler {
     }
 }
 
-const SIZES: [&str; 5] = [" byte", " KiB", " MiB", " GiB", " TiB"];
+const SIZES: [&str; 5] = [" B", " KiB", " MiB", " GiB", " TiB"];
 
 pub fn to_humanreadable(bytes: usize) -> String {
     let mut count = 0;
@@ -69,4 +78,11 @@ pub fn update_niceness(pid: usize, new_niceness: i8) {
             .output()
             .expect("failed adjust niceness");
     }
+}
+
+pub fn get_millis() -> usize {
+    let tmp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards");
+    tmp.as_secs() as usize * 1000 + tmp.subsec_nanos() as usize / 1_000_000 as usize
 }
