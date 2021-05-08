@@ -102,7 +102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize app state
     let mut app = AppLogic {
         state: AppState::Interaction,
-        current_widget: WidgetType::Memory,
+        current_widget: WidgetType::Processes,
         show_selected_widget: false,
     };
 

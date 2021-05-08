@@ -1,5 +1,6 @@
 use regex::Regex;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::fs::{read_dir, File};
 use std::process::Command;
 use std::str;
@@ -15,7 +16,6 @@ use tui::{
     text::Spans,
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, TableState, Wrap},
 };
-use std::collections::HashMap;
 
 use crate::util;
 
@@ -41,7 +41,6 @@ pub struct ProcessList {
 }
 
 impl ProcessList {
-
     pub fn new() -> Self {
         Default::default()
     }
@@ -135,7 +134,11 @@ pub struct Process {
 }
 
 impl Process {
-    pub fn new(pid: usize, thread_group_id: usize, cpu_times: &mut HashMap<usize, CPUTime>) -> Self {
+    pub fn new(
+        pid: usize,
+        thread_group_id: usize,
+        cpu_times: &mut HashMap<usize, CPUTime>,
+    ) -> Self {
         let mut new: Self = Default::default();
         new.pid = pid;
         new.thread_group_id = thread_group_id;
@@ -179,10 +182,10 @@ impl Process {
                 "VmSize" => {
                     (*self).virtual_memory_size =
                         value[0..value.len() - 3].parse::<usize>().unwrap()
-                },
+                }
                 "VmSwap" => {
                     (*self).swapped_memory = value[0..value.len() - 3].parse::<usize>().unwrap()
-                },
+                }
                 _ => continue,
             }
         }
@@ -276,7 +279,7 @@ impl Process {
             Some(x) => *x,
             None => Default::default(),
         };
-        
+
         let seconds: f32 = (util::get_millis() - old_cpu_times.millis) as f32 / 1000.0;
 
         let time = self.cpu_time - old_cpu_times.exec_time;
@@ -284,11 +287,11 @@ impl Process {
         match cpu_times.get_mut(&self.pid) {
             Some(x) => {
                 *x = CPUTime::new(self.cpu_time, util::get_millis());
-            },
+            }
             None => {
                 cpu_times.insert(self.pid, CPUTime::new(self.cpu_time, util::get_millis()));
                 ()
-            },
+            }
         }
 
         let hertz = 100.0;
@@ -328,17 +331,19 @@ pub struct ProcessesWidget {
 
 impl ProcessesWidget {
     pub fn new() -> Self {
-        Self {
+        let mut a = Self {
             table_state: TableState::default(),
             item_index: 0,
-            column_index: 0,
-            sort_index: 0,
+            column_index: 9,
+            sort_index: 9,
             sort_descending: true,
             process_list: Default::default(),
             dc_thread: init_data_collection_thread(),
             popup_open: false,
             input: String::from(""),
-        }
+        };
+        a.table_state.select(Some(0));
+        a
     }
 
     fn sort(&mut self) {
@@ -388,11 +393,9 @@ impl ProcessesWidget {
                     .sort_by(|a, b| a.state.partial_cmp(&b.state).unwrap_or(Ordering::Equal));
             }
             8 => {
-                self.process_list.processes.sort_by(|a, b| {
-                    a.nice
-                        .partial_cmp(&b.nice)
-                        .unwrap_or(Ordering::Equal)
-                });
+                self.process_list
+                    .processes
+                    .sort_by(|a, b| a.nice.partial_cmp(&b.nice).unwrap_or(Ordering::Equal));
             }
             9 => {
                 self.process_list.processes.sort_by(|a, b| {
@@ -440,12 +443,13 @@ impl ProcessesWidget {
 
     pub fn draw<B: Backend>(&mut self, f: &mut Frame<B>, rect: Rect, block: Block) {
         let selected_style = Style::default()
-            .fg(Color::Yellow)
+            .fg(Color::White)
             .bg(Color::DarkGray)
             .add_modifier(Modifier::REVERSED);
         let header_style = Style::default().bg(Color::DarkGray).fg(Color::White);
         let header_cells = [
-            "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "Nice", "CPU", "VM", "SM", "CMD",
+            "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "Nice", "CPU", "VM",
+            "SM", "CMD",
         ]
         .iter()
         .enumerate()
@@ -475,9 +479,18 @@ impl ProcessesWidget {
                 cells.push(Cell::from(p.name.to_string()));
                 cells.push(Cell::from(p.state.to_string()));
                 cells.push(Cell::from(format!("{: >4}", p.nice)));
-                cells.push(Cell::from(format!("{: >7}", format!("{:3.2}%", p.cpu_usage))));
-                cells.push(Cell::from(format!("{: >9}", util::to_humanreadable(p.virtual_memory_size * 1000))));
-                cells.push(Cell::from(format!("{: >9}", util::to_humanreadable(p.swapped_memory * 1000))));
+                cells.push(Cell::from(format!(
+                    "{: >7}",
+                    format!("{:3.2}%", p.cpu_usage)
+                )));
+                cells.push(Cell::from(format!(
+                    "{: >9}",
+                    util::to_humanreadable(p.virtual_memory_size * 1000)
+                )));
+                cells.push(Cell::from(format!(
+                    "{: >9}",
+                    util::to_humanreadable(p.swapped_memory * 1000)
+                )));
                 cells.push(Cell::from(p.command.to_string()));
                 Row::new(cells).height(1)
             });
@@ -566,37 +579,37 @@ impl ProcessesWidget {
                         self.table_state.select(Some(self.item_index));
                     }
                 }
-            Key::Up => {
-                if self.item_index > 0 {
-                    self.item_index -= 1;
-                    self.table_state.select(Some(self.item_index));
+                Key::Up => {
+                    if self.item_index > 0 {
+                        self.item_index -= 1;
+                        self.table_state.select(Some(self.item_index));
+                    }
                 }
-            }
-            Key::Right => {
-                if self.column_index < 10 {
-                    self.column_index += 1;
+                Key::Right => {
+                    if self.column_index < 12 {
+                        self.column_index += 1;
+                    }
                 }
-            }
-            Key::Char('k') => {
-                util::kill_process(self.process_list.processes[self.item_index].pid)
-            }
-            Key::Char('n') => {
-                self.popup_open = !self.popup_open;
-            }
-            Key::Left => {
-                if self.column_index > 0 {
-                    self.column_index -= 1;
+                Key::Char('k') => {
+                    util::kill_process(self.process_list.processes[self.item_index].pid)
                 }
-            }
-            Key::Char('s') => {
-                if self.sort_index == self.column_index {
-                    self.sort_descending = !self.sort_descending;
+                Key::Char('n') => {
+                    self.popup_open = !self.popup_open;
                 }
+                Key::Left => {
+                    if self.column_index > 0 {
+                        self.column_index -= 1;
+                    }
+                }
+                Key::Char('s') => {
+                    if self.sort_index == self.column_index {
+                        self.sort_descending = !self.sort_descending;
+                    }
 
-                self.sort_index = self.column_index;
-                self.sort();
-            }
-            _ => {}
+                    self.sort_index = self.column_index;
+                    self.sort();
+                }
+                _ => {}
             }
         } else {
             match key {
