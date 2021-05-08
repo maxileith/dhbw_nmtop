@@ -262,6 +262,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 app.current_widget = WidgetType::get_by_id(id - 1);
                             }
                         }
+                        Key::Up => {
+                            let (id, _) = app.current_widget.get_value();
+                            if id == 3 {
+                                app.current_widget = WidgetType::get_by_id(1);
+                            } else if id == 4 {
+                                app.current_widget = WidgetType::get_by_id(3);
+                            }
+                        }
+                        Key::Down => {
+                            let (id, _) = app.current_widget.get_value();
+                            if id >= 0 && id < 3 {
+                                app.current_widget = WidgetType::get_by_id(3);
+                            } else if id == 3 {
+                                app.current_widget = WidgetType::get_by_id(4);
+                            }
+                        }
                         Key::Esc => {
                             app.state = AppState::Interaction;
                             app.show_selected_widget = true;
