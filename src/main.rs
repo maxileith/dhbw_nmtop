@@ -74,10 +74,10 @@ impl WidgetType {
     fn get_help_text(&self) -> &str {
         match *self {
             WidgetType::Memory => "",
-            WidgetType::Disk => "up: previous page, down: next page",
+            WidgetType::Disk => ", up: previous, down: next",
             WidgetType::Network => "",
-            WidgetType::CPU => "SPACE: show/hide all cores",
-            WidgetType::Processes => "s:sort, left/right:  move header, up/down: select process",
+            WidgetType::CPU => ", SPACE: show/hide all cores",
+            WidgetType::Processes => ", s:sort, left/right:  move header, up/down: select process, n: niceness",
         }
     }
 }
@@ -189,7 +189,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             let mut help_text =
-                "ESC: navigation/interaction, v:view/hide selected widget, ".to_string();
+                "ESC: navigation/interaction, v:view/hide selected widget".to_string();
 
             if app.show_selected_widget && app.state == AppState::Interaction {
                 help_text += app.current_widget.get_help_text(); // TODO: make constant
@@ -272,7 +272,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         Key::Down => {
                             let (id, _) = app.current_widget.get_value();
-                            if id >= 0 && id < 3 {
+                            if id < 3 {
                                 app.current_widget = WidgetType::get_by_id(3);
                             } else if id == 3 {
                                 app.current_widget = WidgetType::get_by_id(4);
