@@ -46,12 +46,40 @@ pub fn get_disks_usage() -> Vec<DiskInfo> {
         if line.starts_with("/dev/") {
             let mut sliced_line = line.split_whitespace();
             let disk_info = DiskInfo {
-                filesystem: sliced_line.next().unwrap().replace("/dev", "").to_string(),
-                total: sliced_line.next().unwrap().parse().unwrap(),
-                used: sliced_line.next().unwrap().parse().unwrap(),
-                available: sliced_line.next().unwrap().parse().unwrap(),
-                used_percentage: sliced_line.next().unwrap().to_string(),
-                mountpoint: sliced_line.next().unwrap().to_string(),
+                filesystem: match sliced_line.next() {
+                    Some(x) => x.replace("/dev", "").to_string(),
+                    _ => "".to_string(),
+                },
+                // maybe usecase for unwarp_or_default?
+                total: match sliced_line.next() {
+                    Some(x) => match x.parse() {
+                        Ok(x) => x,
+                        _ => 0,
+                    },
+                    _ => 0,
+                },
+                used: match sliced_line.next() {
+                    Some(x) => match x.parse() {
+                        Ok(x) => x,
+                        _ => 0,
+                    },
+                    _ => 0,
+                },
+                available: match sliced_line.next() {
+                    Some(x) => match x.parse() {
+                        Ok(x) => x,
+                        _ => 0,
+                    },
+                    _ => 0,
+                },
+                used_percentage: match sliced_line.next() {
+                    Some(x) => x.to_string(),
+                    _ => "".to_string(),
+                },
+                mountpoint: match sliced_line.next() {
+                    Some(x) => x.to_string(),
+                    _ => "".to_string(),
+                },
             };
 
             disk_array.push(disk_info);

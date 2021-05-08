@@ -9,10 +9,11 @@ use std::{thread, time};
 use termion::event::Key;
 use tui::{
     backend::Backend,
-    layout::{Constraint, Rect},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     terminal::Frame,
-    widgets::{Block, Cell, Row, Table, TableState},
+    text::Spans,
+    widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, TableState, Wrap},
 };
 use std::collections::HashMap;
 
@@ -321,6 +322,8 @@ pub struct ProcessesWidget {
     sort_descending: bool,
     process_list: ProcessList,
     dc_thread: mpsc::Receiver<ProcessList>,
+    popup_open: bool,
+    input: String,
 }
 
 impl ProcessesWidget {
@@ -333,6 +336,8 @@ impl ProcessesWidget {
             sort_descending: true,
             process_list: Default::default(),
             dc_thread: init_data_collection_thread(),
+            popup_open: false,
+            input: String::from(""),
         }
     }
 
@@ -496,16 +501,71 @@ impl ProcessesWidget {
             ])
             .block(block);
         f.render_stateful_widget(table, rect, &mut self.table_state);
+
+        if self.popup_open {
+            let horizontal = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(
+                    [
+                        Constraint::Percentage(25),
+                        Constraint::Percentage(50),
+                        Constraint::Percentage(25),
+                    ]
+                    .as_ref(),
+                )
+                .split(rect);
+
+            let popup = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(
+                    [
+                        Constraint::Length((rect.height - 8) / 2),
+                        Constraint::Length(8),
+                        Constraint::Min((rect.height - 8) / 2),
+                    ]
+                    .as_ref(),
+                )
+                .split(horizontal[1]);
+
+            let clear = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(
+                    [
+                        Constraint::Length((rect.height - 10) / 2),
+                        Constraint::Length(10),
+                        Constraint::Min((rect.height - 10) / 2),
+                    ]
+                    .as_ref(),
+                )
+                .split(horizontal[1]);
+
+            let text = vec![
+                Spans::default(),
+                Spans::from(format!("{}", self.input)),
+                Spans::default(),
+                Spans::default(),
+                Spans::from("(C)ancel"),
+                Spans::from("Press Enter to apply"),
+            ];
+            let block = Block::default()
+                .style(Style::default().fg(Color::Yellow))
+                .title("Niceness")
+                .borders(Borders::ALL);
+            let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
+            f.render_widget(Clear, clear[1]);
+            f.render_widget(paragraph, popup[1]);
+        }
     }
 
     pub fn handle_input(&mut self, key: Key) {
-        match key {
-            Key::Down => {
-                if self.item_index < self.process_list.processes.len() - 1 {
-                    self.item_index += 1;
-                    self.table_state.select(Some(self.item_index));
+        if !self.popup_open {
+            match key {
+                Key::Down => {
+                    if self.item_index < self.process_list.processes.len() - 1 {
+                        self.item_index += 1;
+                        self.table_state.select(Some(self.item_index));
+                    }
                 }
-            }
             Key::Up => {
                 if self.item_index > 0 {
                     self.item_index -= 1;
@@ -516,6 +576,12 @@ impl ProcessesWidget {
                 if self.column_index < 10 {
                     self.column_index += 1;
                 }
+            }
+            Key::Char('k') => {
+                util::kill_process(self.process_list.processes[self.item_index].pid)
+            }
+            Key::Char('n') => {
+                self.popup_open = !self.popup_open;
             }
             Key::Left => {
                 if self.column_index > 0 {
@@ -531,6 +597,36 @@ impl ProcessesWidget {
                 self.sort();
             }
             _ => {}
+            }
+        } else {
+            match key {
+                Key::Backspace => {
+                    self.input.pop();
+                }
+                Key::Char('\n') => {
+                    let input_value = self.input.parse().unwrap_or_default();
+                    util::update_niceness(
+                        self.process_list.processes[self.item_index].pid,
+                        input_value,
+                    );
+                    self.input.clear();
+                    self.popup_open = false;
+                }
+                Key::Char('c') => {
+                    self.input.clear();
+                    self.popup_open = false;
+                }
+                Key::Char(key) => {
+                    if self.input.len() < 3 {
+                        self.input.push(key)
+                    }
+                }
+                Key::Esc => {
+                    self.input.clear();
+                    self.popup_open = false;
+                }
+                _ => {}
+            }
         }
     }
 }
