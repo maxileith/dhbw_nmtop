@@ -16,8 +16,6 @@ impl InputHandler {
 
         thread::spawn(move || {
             let stdin = io::stdin();
-            let mut previous_key = Key::Null;
-            let mut counter = 0;
             let mut previous_time = Instant::now();
 
             for evt in stdin.keys() {

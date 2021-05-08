@@ -366,17 +366,19 @@ pub struct ProcessesWidget {
 
 impl ProcessesWidget {
     pub fn new() -> Self {
-        Self {
+        let mut a = Self {
             table_state: TableState::default(),
             item_index: 0,
-            column_index: 0,
-            sort_index: 0,
+            column_index: 9,
+            sort_index: 9,
             sort_descending: true,
             process_list: Default::default(),
             dc_thread: init_data_collection_thread(),
             popup_open: false,
             input: String::from(""),
-        }
+        };
+        a.table_state.select(Some(0));
+        a
     }
 
     fn sort(&mut self) {
@@ -479,7 +481,7 @@ impl ProcessesWidget {
 
     pub fn draw<B: Backend>(&mut self, f: &mut Frame<B>, rect: Rect, block: Block) {
         let selected_style = Style::default()
-            .fg(Color::Yellow)
+            .fg(Color::White)
             .bg(Color::DarkGray)
             .add_modifier(Modifier::REVERSED);
         let header_style = Style::default().bg(Color::DarkGray).fg(Color::White);
@@ -564,13 +566,18 @@ impl ProcessesWidget {
                 )
                 .split(rect);
 
+            let mut height: u16 = 10;
+            if rect.height > 10 {
+                height = rect.height;
+            }
+
             let popup = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints(
                     [
-                        Constraint::Length((rect.height - 8) / 2),
+                        Constraint::Length((height - 8) / 2),
                         Constraint::Length(8),
-                        Constraint::Min((rect.height - 8) / 2),
+                        Constraint::Min((height - 8) / 2),
                     ]
                     .as_ref(),
                 )
@@ -580,9 +587,9 @@ impl ProcessesWidget {
                 .direction(Direction::Vertical)
                 .constraints(
                     [
-                        Constraint::Length((rect.height - 10) / 2),
+                        Constraint::Length((height - 10) / 2),
                         Constraint::Length(10),
-                        Constraint::Min((rect.height - 10) / 2),
+                        Constraint::Min((height - 10) / 2),
                     ]
                     .as_ref(),
                 )
@@ -622,7 +629,7 @@ impl ProcessesWidget {
                     }
                 }
                 Key::Right => {
-                    if self.column_index < 10 {
+                    if self.column_index < 12 {
                         self.column_index += 1;
                     }
                 }
