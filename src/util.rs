@@ -2,7 +2,7 @@ use std::io;
 use std::process::Command;
 use std::sync::mpsc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::{thread, time::Duration, time::Instant};
+use std::{thread, time::Instant};
 use termion::event::Key;
 use termion::input::TermRead;
 

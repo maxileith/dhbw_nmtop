@@ -1,5 +1,6 @@
 use regex::Regex;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::fs::{read_dir, File};
 use std::process::Command;
 use std::str;
@@ -15,7 +16,6 @@ use tui::{
     text::Spans,
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, TableState, Wrap},
 };
-use std::collections::HashMap;
 
 use crate::util;
 
@@ -41,7 +41,6 @@ pub struct ProcessList {
 }
 
 impl ProcessList {
-
     pub fn new() -> Self {
         Default::default()
     }
@@ -63,54 +62,81 @@ impl ProcessList {
         let re = Regex::new("^/proc/(?P<tid>[0-9]+)$").unwrap();
         let re2 = Regex::new("^/proc/[0-9]+/task/(?P<pid>[0-9]+)$").unwrap();
 
-        ///////////////////////////////////////
-        // iterate through thread groups
-        ///////////////////////////////////////
-        let tg_dirs = match read_dir("/proc") {
+        // get to know all possible thread group directories
+        let proc_dirs = match read_dir("/proc") {
             Ok(x) => x,
             Err(_) => return,
         };
-        for tg in tg_dirs {
+        ///////////////////////////////////////
+        // iterate through thread groups
+        ///////////////////////////////////////
+        for tg in proc_dirs {
             let tg = match tg {
+                Ok(x) => x.path(),
+                Err(_) => continue,
+            };
+            // the path has to be a directory to be a thread group
+            if !tg.is_dir() {
+                continue;
+            }
+            // convert tg to string
+            let tg = match tg.to_str() {
+                Some(x) => x,
+                _ => continue,
+            };
+            // check if directory is a thread group by checking against the expected pattern
+            if !re.is_match(tg) {
+                continue;
+            }
+            // get thread group id from regex
+            let tid = match re.captures(tg) {
+                Some(x) => x.get(1).map_or("", |m| m.as_str()),
+                _ => continue,
+            };
+            // get to know all processes of the thread group
+            let p_dirs = match read_dir(format!("/proc/{}/task", tid)) {
                 Ok(x) => x,
                 Err(_) => continue,
             };
-            let tg = tg.path();
-            if tg.is_dir() {
-                let tg = tg.to_str().unwrap();
-                // check if dir is thread group
-                if re.is_match(tg) {
-                    let tid = re.captures(tg).unwrap().get(1).map_or("", |m| m.as_str());
-
-                    ///////////////////////////////////////
-                    // iterate through processes
-                    ///////////////////////////////////////
-                    let p_dirs = match read_dir(format!("/proc/{}/task", tid)) {
-                        Ok(x) => x,
-                        Err(_) => continue,
-                    };
-                    for p in p_dirs {
-                        let p = match p {
-                            Ok(x) => x,
-                            Err(_) => continue,
-                        };
-                        let p = p.path();
-                        if p.is_dir() {
-                            let p = p.to_str().unwrap();
-                            // check if dir is process
-                            if re2.is_match(p) {
-                                let pid =
-                                    re2.captures(p).unwrap().get(1).map_or("", |m| m.as_str());
-
-                                self.processes.push(Process::new(
-                                    pid.parse::<usize>().unwrap(),
-                                    tid.parse::<usize>().unwrap(),
-                                    &mut self.cpu_times,
-                                ))
-                            }
-                        }
-                    }
+            ///////////////////////////////////////
+            // iterate through processes
+            ///////////////////////////////////////
+            for p in p_dirs {
+                let p = match p {
+                    Ok(x) => x.path(),
+                    Err(_) => continue,
+                };
+                // the path has to be a directory to be a process
+                if !p.is_dir() {
+                    continue;
                 }
+                // convert p to string
+                let p = match p.to_str() {
+                    Some(x) => x,
+                    _ => continue,
+                };
+                // check if directory is a process by checking against the expected pattern
+                if !re2.is_match(p) {
+                    continue;
+                }
+                // get process id from regex
+                let pid = match re2.captures(p) {
+                    Some(x) => x.get(1).map_or("", |m| m.as_str()),
+                    _ => continue,
+                };
+                ///////////////////////////////
+                // Found process -> add to list
+                ///////////////////////////////
+                let pid = match pid.parse::<usize>() {
+                    Ok(x) => x,
+                    Err(_) => continue,
+                };
+                let tid = match tid.parse::<usize>() {
+                    Ok(x) => x,
+                    Err(_) => continue,
+                };
+                self.processes
+                    .push(Process::new(pid, tid, &mut self.cpu_times))
             }
         }
     }
@@ -135,7 +161,11 @@ pub struct Process {
 }
 
 impl Process {
-    pub fn new(pid: usize, thread_group_id: usize, cpu_times: &mut HashMap<usize, CPUTime>) -> Self {
+    pub fn new(
+        pid: usize,
+        thread_group_id: usize,
+        cpu_times: &mut HashMap<usize, CPUTime>,
+    ) -> Self {
         let mut new: Self = Default::default();
         new.pid = pid;
         new.thread_group_id = thread_group_id;
@@ -177,12 +207,21 @@ impl Process {
                 "Name" => (*self).name = value,
                 "Umask" => (*self).umask = value,
                 "VmSize" => {
-                    (*self).virtual_memory_size =
-                        value[0..value.len() - 3].parse::<usize>().unwrap()
-                },
+                    // value.len() - 3 cuts of " KB" at the end of the string
+                    let value = match value[0..value.len() - 3].parse::<usize>() {
+                        Ok(x) => x,
+                        Err(_) => 0,
+                    };
+                    (*self).virtual_memory_size = value;
+                }
                 "VmSwap" => {
-                    (*self).swapped_memory = value[0..value.len() - 3].parse::<usize>().unwrap()
-                },
+                    // value.len() - 3 cuts of " KB" at the end of the string
+                    let value = match value[0..value.len() - 3].parse::<usize>() {
+                        Ok(x) => x,
+                        Err(_) => 0,
+                    };
+                    (*self).swapped_memory = value;
+                }
                 _ => continue,
             }
         }
@@ -276,7 +315,6 @@ impl Process {
             Some(x) => *x,
             None => Default::default(),
         };
-        
         let seconds: f32 = (util::get_millis() - old_cpu_times.millis) as f32 / 1000.0;
 
         let time = self.cpu_time - old_cpu_times.exec_time;
@@ -284,11 +322,11 @@ impl Process {
         match cpu_times.get_mut(&self.pid) {
             Some(x) => {
                 *x = CPUTime::new(self.cpu_time, util::get_millis());
-            },
+            }
             None => {
                 cpu_times.insert(self.pid, CPUTime::new(self.cpu_time, util::get_millis()));
                 ()
-            },
+            }
         }
 
         let hertz = 100.0;
@@ -388,11 +426,9 @@ impl ProcessesWidget {
                     .sort_by(|a, b| a.state.partial_cmp(&b.state).unwrap_or(Ordering::Equal));
             }
             8 => {
-                self.process_list.processes.sort_by(|a, b| {
-                    a.nice
-                        .partial_cmp(&b.nice)
-                        .unwrap_or(Ordering::Equal)
-                });
+                self.process_list
+                    .processes
+                    .sort_by(|a, b| a.nice.partial_cmp(&b.nice).unwrap_or(Ordering::Equal));
             }
             9 => {
                 self.process_list.processes.sort_by(|a, b| {
@@ -432,9 +468,12 @@ impl ProcessesWidget {
         // Recv data from the data collector thread
         let processes_info = self.dc_thread.try_recv();
 
-        if processes_info.is_ok() {
-            self.process_list = processes_info.unwrap();
-            self.sort();
+        match processes_info {
+            Ok(x) => {
+                self.process_list = x;
+                self.sort();
+            }
+            Err(_) => (),
         }
     }
 
@@ -445,7 +484,8 @@ impl ProcessesWidget {
             .add_modifier(Modifier::REVERSED);
         let header_style = Style::default().bg(Color::DarkGray).fg(Color::White);
         let header_cells = [
-            "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "Nice", "CPU", "VM", "SM", "CMD",
+            "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "Nice", "CPU", "VM",
+            "SM", "CMD",
         ]
         .iter()
         .enumerate()
@@ -475,9 +515,18 @@ impl ProcessesWidget {
                 cells.push(Cell::from(p.name.to_string()));
                 cells.push(Cell::from(p.state.to_string()));
                 cells.push(Cell::from(format!("{: >4}", p.nice)));
-                cells.push(Cell::from(format!("{: >7}", format!("{:3.2}%", p.cpu_usage))));
-                cells.push(Cell::from(format!("{: >9}", util::to_humanreadable(p.virtual_memory_size * 1000))));
-                cells.push(Cell::from(format!("{: >9}", util::to_humanreadable(p.swapped_memory * 1000))));
+                cells.push(Cell::from(format!(
+                    "{: >7}",
+                    format!("{:3.2}%", p.cpu_usage)
+                )));
+                cells.push(Cell::from(format!(
+                    "{: >9}",
+                    util::to_humanreadable(p.virtual_memory_size * 1000)
+                )));
+                cells.push(Cell::from(format!(
+                    "{: >9}",
+                    util::to_humanreadable(p.swapped_memory * 1000)
+                )));
                 cells.push(Cell::from(p.command.to_string()));
                 Row::new(cells).height(1)
             });
@@ -566,37 +615,37 @@ impl ProcessesWidget {
                         self.table_state.select(Some(self.item_index));
                     }
                 }
-            Key::Up => {
-                if self.item_index > 0 {
-                    self.item_index -= 1;
-                    self.table_state.select(Some(self.item_index));
+                Key::Up => {
+                    if self.item_index > 0 {
+                        self.item_index -= 1;
+                        self.table_state.select(Some(self.item_index));
+                    }
                 }
-            }
-            Key::Right => {
-                if self.column_index < 10 {
-                    self.column_index += 1;
+                Key::Right => {
+                    if self.column_index < 10 {
+                        self.column_index += 1;
+                    }
                 }
-            }
-            Key::Char('k') => {
-                util::kill_process(self.process_list.processes[self.item_index].pid)
-            }
-            Key::Char('n') => {
-                self.popup_open = !self.popup_open;
-            }
-            Key::Left => {
-                if self.column_index > 0 {
-                    self.column_index -= 1;
+                Key::Char('k') => {
+                    util::kill_process(self.process_list.processes[self.item_index].pid)
                 }
-            }
-            Key::Char('s') => {
-                if self.sort_index == self.column_index {
-                    self.sort_descending = !self.sort_descending;
+                Key::Char('n') => {
+                    self.popup_open = !self.popup_open;
                 }
+                Key::Left => {
+                    if self.column_index > 0 {
+                        self.column_index -= 1;
+                    }
+                }
+                Key::Char('s') => {
+                    if self.sort_index == self.column_index {
+                        self.sort_descending = !self.sort_descending;
+                    }
 
-                self.sort_index = self.column_index;
-                self.sort();
-            }
-            _ => {}
+                    self.sort_index = self.column_index;
+                    self.sort();
+                }
+                _ => {}
             }
         } else {
             match key {
