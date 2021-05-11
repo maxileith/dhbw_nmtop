@@ -150,8 +150,7 @@ pub struct Process {
     pub state: String,
     pub parent_pid: usize,
     pub thread_group_id: usize,
-    pub virtual_memory_size: usize,
-    pub swapped_memory: usize,
+    pub memory: usize,
     pub command: String,
     pub threads: usize,
     pub user: String,
@@ -206,21 +205,13 @@ impl Process {
             match name {
                 "Name" => (*self).name = value,
                 "Umask" => (*self).umask = value,
-                "VmSize" => {
+                "RssAnon" => {
                     // value.len() - 3 cuts of " KB" at the end of the string
                     let value = match value[0..value.len() - 3].parse::<usize>() {
                         Ok(x) => x,
                         Err(_) => 0,
                     };
-                    (*self).virtual_memory_size = value;
-                }
-                "VmSwap" => {
-                    // value.len() - 3 cuts of " KB" at the end of the string
-                    let value = match value[0..value.len() - 3].parse::<usize>() {
-                        Ok(x) => x,
-                        Err(_) => 0,
-                    };
-                    (*self).swapped_memory = value;
+                    (*self).memory = value;
                 }
                 _ => continue,
             }
@@ -440,20 +431,11 @@ impl ProcessesWidget {
                 });
             }
             10 => {
-                self.process_list.processes.sort_by(|a, b| {
-                    a.virtual_memory_size
-                        .partial_cmp(&b.virtual_memory_size)
-                        .unwrap_or(Ordering::Equal)
-                });
+                self.process_list
+                    .processes
+                    .sort_by(|a, b| a.memory.partial_cmp(&b.memory).unwrap_or(Ordering::Equal));
             }
             11 => {
-                self.process_list.processes.sort_by(|a, b| {
-                    a.swapped_memory
-                        .partial_cmp(&b.swapped_memory)
-                        .unwrap_or(Ordering::Equal)
-                });
-            }
-            12 => {
                 self.process_list
                     .processes
                     .sort_by(|a, b| a.command.partial_cmp(&b.command).unwrap_or(Ordering::Equal));
@@ -486,8 +468,8 @@ impl ProcessesWidget {
             .add_modifier(Modifier::REVERSED);
         let header_style = Style::default().bg(Color::DarkGray).fg(Color::White);
         let header_cells = [
-            "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "Nice", "CPU", "VM",
-            "SM", "CMD",
+            "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "Nice", "CPU",
+            "Mem", "CMD",
         ]
         .iter()
         .enumerate()
@@ -523,11 +505,7 @@ impl ProcessesWidget {
                 )));
                 cells.push(Cell::from(format!(
                     "{: >9}",
-                    util::to_humanreadable(p.virtual_memory_size * 1000)
-                )));
-                cells.push(Cell::from(format!(
-                    "{: >9}",
-                    util::to_humanreadable(p.swapped_memory * 1000)
+                    util::to_humanreadable(p.memory * 1024)
                 )));
                 cells.push(Cell::from(p.command.to_string()));
                 Row::new(cells).height(1)
@@ -546,7 +524,6 @@ impl ProcessesWidget {
                 Constraint::Length(6),
                 Constraint::Length(5),
                 Constraint::Length(8),
-                Constraint::Length(9),
                 Constraint::Length(9),
                 Constraint::Min(1),
             ])
