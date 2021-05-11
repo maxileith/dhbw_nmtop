@@ -53,7 +53,7 @@ impl WidgetType {
     fn get_value(&self) -> (usize, &str) {
         match *self {
             WidgetType::Memory => (0, "Memory"),
-            WidgetType::Disk => (1, "Disk"),
+            WidgetType::Disk => (1, "Partitions"),
             WidgetType::Network => (2, "Network"),
             WidgetType::CPU => (3, "CPU"),
             WidgetType::Processes => (4, "Processes"),
@@ -77,7 +77,9 @@ impl WidgetType {
             WidgetType::Disk => ", up: previous, down: next",
             WidgetType::Network => "",
             WidgetType::CPU => ", SPACE: show/hide all cores",
-            WidgetType::Processes => ", s:sort, left/right:  move header, up/down: select process, n: niceness",
+            WidgetType::Processes => {
+                ", s:sort, left/right:  move header, up/down: select process, n: niceness"
+            }
         }
     }
 }
