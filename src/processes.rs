@@ -317,17 +317,6 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<ProcessList> {
     rx
 }
 
-/*struct Column<T> {
-    filter_value: T,
-    name: &'static str,
-}
-
-enum ColumnType {
-    ColString(Column<String>),
-    ColNumber(Column<usize>),
-}
-*/
-
 #[derive(PartialEq)]
 enum InputMode {
     Niceness,
@@ -367,7 +356,6 @@ impl ProcessesWidget {
             filter_index: None,
             filter_value_str: String::from(""),
             filter_value_usize: 0,
-            //columns: vec![ColumnType::ColNumber(c)],
         };
         a.table_state.select(Some(0));
         a
@@ -458,15 +446,20 @@ impl ProcessesWidget {
         }
     }
 
-
+    // FIXME: when disable filtering and reopening the popup the table disappears
+    // FIXME: somehow a panick is generated
     fn filter(&self, p: &Process) -> bool {
        match self.filter_index {
+            // Numbers
             Some(0) => p.pid == self.filter_value_usize,
             Some(1) => p.parent_pid == self.filter_value_usize,
             Some(2) => p.thread_group_id == self.filter_value_usize,
-            //Some(4) => p.threads == self.filter_value_usize,
             Some(5) => p.threads == self.filter_value_usize,
-            //Some(8) => p.nice == self.filter_value_usize,
+            // Strings 
+            Some(3) => p.user.contains(&self.filter_value_str),
+            Some(6) => p.name.contains(&self.filter_value_str),
+            Some(7) => p.state.contains(&self.filter_value_str),
+            Some(12) => p.command.contains(&self.filter_value_str),
             _ => true,
        }
     }
@@ -684,6 +677,9 @@ impl ProcessesWidget {
                                 if i <= 2 || i == 4 || i == 8 {
                                     let input_value: usize = self.input.parse().unwrap_or_default();
                                     self.filter_value_usize = input_value;
+                                } else if i == 3 || i == 6 || i == 7 || i == 12 {
+                                    let input_value: String = self.input.parse().unwrap_or_default();
+                                    self.filter_value_str = input_value;
                                 }
                             }
                             None => {}
