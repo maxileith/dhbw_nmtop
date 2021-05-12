@@ -77,7 +77,7 @@ impl WidgetType {
             WidgetType::Disk => ", up: previous, down: next",
             WidgetType::Network => "",
             WidgetType::CPU => ", SPACE: show/hide all cores",
-            WidgetType::Processes => ", s:sort, left/right:  move header, up/down: select process, n: niceness",
+            WidgetType::Processes => ", s:sort, left/right:  move header, up/down: select process, n: niceness, f: filter",
         }
     }
 }

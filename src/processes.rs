@@ -317,16 +317,38 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<ProcessList> {
     rx
 }
 
+/*struct Column<T> {
+    filter_value: T,
+    name: &'static str,
+}
+
+enum ColumnType {
+    ColString(Column<String>),
+    ColNumber(Column<usize>),
+}
+*/
+
+#[derive(PartialEq)]
+enum InputMode {
+    Niceness,
+    Filter,
+}
+
 pub struct ProcessesWidget {
     table_state: TableState,
     item_index: usize,
     sort_index: usize,
     column_index: usize,
+    filter_index: Option<usize>,
+    filter_value_str: String,
+    filter_value_usize: usize,
     sort_descending: bool,
     process_list: ProcessList,
     dc_thread: mpsc::Receiver<ProcessList>,
     popup_open: bool,
     input: String,
+    input_mode: InputMode,
+    //columns: Vec<ColumnType>,
 }
 
 impl ProcessesWidget {
@@ -341,6 +363,11 @@ impl ProcessesWidget {
             dc_thread: init_data_collection_thread(),
             popup_open: false,
             input: String::from(""),
+            input_mode: InputMode::Niceness,
+            filter_index: None,
+            filter_value_str: String::from(""),
+            filter_value_usize: 0,
+            //columns: vec![ColumnType::ColNumber(c)],
         };
         a.table_state.select(Some(0));
         a
@@ -431,12 +458,26 @@ impl ProcessesWidget {
         }
     }
 
+
+    fn filter(&self, p: &Process) -> bool {
+       match self.filter_index {
+            Some(0) => p.pid == self.filter_value_usize,
+            Some(1) => p.parent_pid == self.filter_value_usize,
+            Some(2) => p.thread_group_id == self.filter_value_usize,
+            //Some(4) => p.threads == self.filter_value_usize,
+            Some(5) => p.threads == self.filter_value_usize,
+            //Some(8) => p.nice == self.filter_value_usize,
+            _ => true,
+       }
+    }
+
     pub fn update(&mut self) {
         // Recv data from the data collector thread
         let processes_info = self.dc_thread.try_recv();
 
         if processes_info.is_ok() {
             self.process_list = processes_info.unwrap();
+
             self.sort();
         }
     }
@@ -467,7 +508,7 @@ impl ProcessesWidget {
             .process_list
             .processes
             .iter()
-            //.skip(self.item_index)
+            .filter(|p| self.filter(p))
             .map(|p| {
                 let mut cells = Vec::new();
                 cells.push(Cell::from(format!("{: >7}", p.pid)));
@@ -516,58 +557,62 @@ impl ProcessesWidget {
         f.render_stateful_widget(table, rect, &mut self.table_state);
 
         if self.popup_open {
-            let horizontal = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints(
-                    [
-                        Constraint::Percentage(25),
-                        Constraint::Percentage(50),
-                        Constraint::Percentage(25),
-                    ]
-                    .as_ref(),
-                )
-                .split(rect);
-
-            let popup = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints(
-                    [
-                        Constraint::Length((rect.height - 8) / 2),
-                        Constraint::Length(8),
-                        Constraint::Min((rect.height - 8) / 2),
-                    ]
-                    .as_ref(),
-                )
-                .split(horizontal[1]);
-
-            let clear = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints(
-                    [
-                        Constraint::Length((rect.height - 10) / 2),
-                        Constraint::Length(10),
-                        Constraint::Min((rect.height - 10) / 2),
-                    ]
-                    .as_ref(),
-                )
-                .split(horizontal[1]);
-
-            let text = vec![
-                Spans::default(),
-                Spans::from(format!("{}", self.input)),
-                Spans::default(),
-                Spans::default(),
-                Spans::from("(C)ancel"),
-                Spans::from("Press Enter to apply"),
-            ];
-            let block = Block::default()
-                .style(Style::default().fg(Color::Yellow))
-                .title("Niceness")
-                .borders(Borders::ALL);
-            let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
-            f.render_widget(Clear, clear[1]);
-            f.render_widget(paragraph, popup[1]);
+            self.draw_popup(f, &rect);
         }
+    }
+
+    fn draw_popup<B: Backend>(&mut self, f: &mut Frame<B>, rect: &Rect) {
+        let horizontal = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(
+                [
+                    Constraint::Percentage(25),
+                    Constraint::Percentage(50),
+                    Constraint::Percentage(25),
+                ]
+                .as_ref(),
+            )
+            .split(*rect);
+
+        let popup = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(
+                [
+                    Constraint::Length((rect.height - 8) / 2),
+                    Constraint::Length(8),
+                    Constraint::Min((rect.height - 8) / 2),
+                ]
+                .as_ref(),
+            )
+            .split(horizontal[1]);
+
+        let clear = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(
+                [
+                    Constraint::Length((rect.height - 10) / 2),
+                    Constraint::Length(10),
+                    Constraint::Min((rect.height - 10) / 2),
+                ]
+                .as_ref(),
+            )
+            .split(horizontal[1]);
+
+        let text = vec![
+            Spans::default(),
+            Spans::from(format!("{}", self.input)),
+            Spans::default(),
+            Spans::default(),
+            Spans::from("(C)ancel"),
+            Spans::from("Press Enter to apply"),
+        ];
+        let block = Block::default()
+            .style(Style::default().fg(Color::Yellow))
+            .title("Input")
+            .borders(Borders::ALL);
+        let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
+        f.render_widget(Clear, clear[1]);
+        f.render_widget(paragraph, popup[1]);
     }
 
     pub fn handle_input(&mut self, key: Key) {
@@ -590,10 +635,19 @@ impl ProcessesWidget {
                         self.column_index += 1;
                     }
                 }
+                Key::Char('f') => {
+                    self.filter_index = Some(self.column_index);
+                    self.input_mode = InputMode::Filter;
+                    self.popup_open = !self.popup_open;
+                }
+                Key::Char('r') => {
+                    self.filter_index = None;
+                }
                 Key::Char('k') => {
                     util::kill_process(self.process_list.processes[self.item_index].pid)
                 }
                 Key::Char('n') => {
+                    self.input_mode = InputMode::Niceness;
                     self.popup_open = !self.popup_open;
                 }
                 Key::Left => {
@@ -607,7 +661,7 @@ impl ProcessesWidget {
                     }
 
                     self.sort_index = self.column_index;
-                    self.sort();
+                    //self.sort();
                 }
                 _ => {}
             }
@@ -618,10 +672,23 @@ impl ProcessesWidget {
                 }
                 Key::Char('\n') => {
                     let input_value = self.input.parse().unwrap_or_default();
-                    util::update_niceness(
-                        self.process_list.processes[self.item_index].pid,
-                        input_value,
-                    );
+
+                    if self.input_mode == InputMode::Niceness {
+                        util::update_niceness(
+                            self.process_list.processes[self.item_index].pid,
+                            input_value,
+                        );
+                    } else if self.input_mode == InputMode::Filter {
+                        match self.filter_index {
+                            Some(i) => {
+                                if i <= 2 || i == 4 || i == 8 {
+                                    let input_value: usize = self.input.parse().unwrap_or_default();
+                                    self.filter_value_usize = input_value;
+                                }
+                            }
+                            None => {}
+                        }
+                    }
                     self.input.clear();
                     self.popup_open = false;
                 }
@@ -630,8 +697,12 @@ impl ProcessesWidget {
                     self.popup_open = false;
                 }
                 Key::Char(key) => {
-                    if self.input.len() < 3 {
+                    if self.input_mode == InputMode::Filter {
                         self.input.push(key)
+                    } else {
+                        if self.input.len() < 3 {
+                            self.input.push(key)
+                        }
                     }
                 }
                 Key::Esc => {
