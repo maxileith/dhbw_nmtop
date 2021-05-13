@@ -77,7 +77,7 @@ impl WidgetType {
             WidgetType::Disk => ", up: previous, down: next",
             WidgetType::Network => "",
             WidgetType::CPU => ", SPACE: show/hide all cores",
-            WidgetType::Processes => ", s:sort, left/right:  move header, up/down: select process, n: niceness, f: filter",
+            WidgetType::Processes => ", s:sort, left/right:  move header, up/down: select process, n: niceness",
         }
     }
 }
@@ -193,6 +193,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             if app.show_selected_widget && app.state == AppState::Interaction {
                 help_text += app.current_widget.get_help_text(); // TODO: make constant
+                
+                if app.current_widget == WidgetType::Processes {
+                    help_text += processes_widget.get_help_text(); 
+                }
             }
 
             // Draw help text

@@ -487,22 +487,6 @@ enum InputMode {
     Filter,
 }
 
-enum Columns {
-    PID = 0,
-    PPID = 1,
-    TID = 2,
-    User = 3,
-    Umask = 4,
-    Threads = 5,
-    Name = 6,
-    State = 7,
-    Nice = 8,
-    CPU = 9,
-    VM = 10,
-    SM = 11,
-    CMD = 12,
-}
-
 pub struct ProcessesWidget {
     table_state: TableState,
     item_index: usize,
@@ -541,7 +525,6 @@ impl ProcessesWidget {
     }
 
     fn sort(&mut self) {
-        // FIXME: ugly, find better way
         let sort_index = self.sort_index;
         let sort_descending = self.sort_descending;
         self.process_list.processes.sort_by(|a, b| {
@@ -566,6 +549,7 @@ impl ProcessesWidget {
                 11 => a.command.partial_cmp(&b.command).unwrap_or(Ordering::Equal),
                 _ => Ordering::Equal,
             };
+            
             if sort_descending {
                 Ordering::reverse(s)
             } else {
@@ -574,8 +558,6 @@ impl ProcessesWidget {
         });
     }
 
-    // FIXME: when disable filtering and reopening the popup the table disappears
-    // FIXME: somehow a panick is generated
     fn filter(&self, p: &Process) -> bool {
         match self.filter_index {
             // Numbers
@@ -599,8 +581,10 @@ impl ProcessesWidget {
 
         match processes_info {
             Ok(x) => {
-                self.process_list = x;
-                self.sort();
+                if !self.popup_open {
+                    self.process_list = x;
+                    self.sort();
+                }
             }
             Err(_) => (),
         }
@@ -800,10 +784,10 @@ impl ProcessesWidget {
                         self.filter_index = Some(self.column_index);
                         match self.filter_index {
                             Some(i) => {
-                                if i <= 2 || i == 8 {
+                                if self.is_usize_column(i) {
                                     let input_value: usize = self.input.parse().unwrap_or_default();
                                     self.filter_value_usize = input_value;
-                                } else if i == 3 || i == 6 || i == 7 || i == 11 || i == 4 {
+                                } else if self.is_string_column(i) {
                                     let input_value: String =
                                         self.input.parse().unwrap_or_default();
                                     self.filter_value_str = input_value;
@@ -833,6 +817,36 @@ impl ProcessesWidget {
                     self.popup_open = false;
                 }
                 _ => {}
+            }
+        }
+    }
+
+    fn is_usize_column (&self, v: usize) -> bool {
+        v <= 2 || v == 5
+        
+    }
+
+    fn is_string_column (&self, v: usize) -> bool {
+        v == 3 || v == 6 || v == 7 || v == 11 || v == 4
+
+    }
+
+    pub fn get_help_text(&self) -> &str {
+        let i = self.column_index;
+        match self.filter_index {
+            Some(i) => {
+                if self.is_string_column(i) || self.is_usize_column(i) {
+                    ", f: filter, r: reset filter"
+                } else {
+                    ", r: reset filter"
+                }
+            }
+            None => {
+                if self.is_string_column(i) || self.is_usize_column(i) {
+                    ", f: filter"
+                } else {
+                    ""
+                }
             }
         }
     }
