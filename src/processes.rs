@@ -419,6 +419,7 @@ impl ProcessesWidget {
             Some(5) => p.threads == self.filter_value_usize,
             // Strings
             Some(3) => p.user.contains(&self.filter_value_str),
+            Some(4) => p.umask.contains(&self.filter_value_str),
             Some(6) => p.name.contains(&self.filter_value_str),
             Some(7) => p.state.contains(&self.filter_value_str),
             Some(12) => p.command.contains(&self.filter_value_str),
@@ -634,10 +635,10 @@ impl ProcessesWidget {
                         self.filter_index = Some(self.column_index);
                         match self.filter_index {
                             Some(i) => {
-                                if i <= 2 || i == 4 || i == 8 {
+                                if i <= 2 || i == 8 {
                                     let input_value: usize = self.input.parse().unwrap_or_default();
                                     self.filter_value_usize = input_value;
-                                } else if i == 3 || i == 6 || i == 7 || i == 12 {
+                                } else if i == 3 || i == 6 || i == 7 || i == 12 || i == 4{
                                     let input_value: String =
                                         self.input.parse().unwrap_or_default();
                                     self.filter_value_str = input_value;
