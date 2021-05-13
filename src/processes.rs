@@ -323,6 +323,24 @@ enum InputMode {
     Filter,
 }
 
+
+enum Columns {
+    PID = 0,
+    PPID = 1,
+    TID = 2,
+    User = 3,
+    Umask = 4,
+    Threads = 5,
+    Name = 6,
+    State = 7,
+    Nice = 8,
+    CPU = 9,
+    VM = 10,
+    SM = 11,
+    CMD = 12,
+}
+
+
 pub struct ProcessesWidget {
     table_state: TableState,
     item_index: usize,
@@ -571,7 +589,6 @@ impl ProcessesWidget {
                     }
                 }
                 Key::Char('f') => {
-                    self.filter_index = Some(self.column_index);
                     self.input_mode = InputMode::Filter;
                     self.popup_open = !self.popup_open;
                 }
@@ -614,6 +631,7 @@ impl ProcessesWidget {
                             input_value,
                         );
                     } else if self.input_mode == InputMode::Filter {
+                        self.filter_index = Some(self.column_index);
                         match self.filter_index {
                             Some(i) => {
                                 if i <= 2 || i == 4 || i == 8 {
