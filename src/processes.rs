@@ -636,7 +636,7 @@ impl ProcessesWidget {
                     }
 
                     self.sort_index = self.column_index;
-                    //self.sort();
+                    self.sort();
                 }
                 _ => {}
             }
