@@ -349,7 +349,6 @@ enum InputMode {
     Filter,
 }
 
-
 enum Columns {
     PID = 0,
     PPID = 1,
@@ -365,7 +364,6 @@ enum Columns {
     SM = 11,
     CMD = 12,
 }
-
 
 pub struct ProcessesWidget {
     table_state: TableState,
@@ -411,20 +409,29 @@ impl ProcessesWidget {
         self.process_list.processes.sort_by(|a, b| {
             let s = match sort_index {
                 0 => a.pid.partial_cmp(&b.pid).unwrap_or(Ordering::Equal),
-                1 => a.parent_pid.partial_cmp(&b.parent_pid).unwrap_or(Ordering::Equal),
-                2 => a.thread_group_id.partial_cmp(&b.thread_group_id).unwrap_or(Ordering::Equal),
+                1 => a
+                    .parent_pid
+                    .partial_cmp(&b.parent_pid)
+                    .unwrap_or(Ordering::Equal),
+                2 => a
+                    .thread_group_id
+                    .partial_cmp(&b.thread_group_id)
+                    .unwrap_or(Ordering::Equal),
                 3 => a.user.partial_cmp(&b.user).unwrap_or(Ordering::Equal),
                 4 => a.umask.partial_cmp(&b.umask).unwrap_or(Ordering::Equal),
                 5 => a.threads.partial_cmp(&b.threads).unwrap_or(Ordering::Equal),
                 6 => a.name.partial_cmp(&b.name).unwrap_or(Ordering::Equal),
                 7 => a.state.partial_cmp(&b.state).unwrap_or(Ordering::Equal),
                 8 => a.nice.partial_cmp(&b.nice).unwrap_or(Ordering::Equal),
-                9 => a.cpu_usage.partial_cmp(&b.cpu_usage).unwrap_or(Ordering::Equal),
+                9 => a
+                    .cpu_usage
+                    .partial_cmp(&b.cpu_usage)
+                    .unwrap_or(Ordering::Equal),
                 10 => a.memory.partial_cmp(&b.memory).unwrap_or(Ordering::Equal),
                 11 => a.command.partial_cmp(&b.command).unwrap_or(Ordering::Equal),
                 _ => Ordering::Equal,
             };
-            
+
             if sort_descending {
                 Ordering::reverse(s)
             } else {
@@ -475,7 +482,9 @@ impl ProcessesWidget {
             "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "Nice", "CPU",
             "Mem", "CMD",
         ]
-        .iter().enumerate().map(|(i, h)| {
+        .iter()
+        .enumerate()
+        .map(|(i, h)| {
             if i == self.column_index {
                 Cell::from(*h).style(Style::default().fg(Color::Yellow).bg(Color::DarkGray))
             } else {
@@ -657,10 +666,10 @@ impl ProcessesWidget {
                         self.filter_index = Some(self.column_index);
                         match self.filter_index {
                             Some(i) => {
-                                if i <= 2 || i == 8 {
+                                if self.is_usize_column(i) {
                                     let input_value: usize = self.input.parse().unwrap_or_default();
                                     self.filter_value_usize = input_value;
-                                } else if i == 3 || i == 6 || i == 7 || i == 11 || i == 4{
+                                } else if self.is_string_column(i) {
                                     let input_value: String =
                                         self.input.parse().unwrap_or_default();
                                     self.filter_value_str = input_value;
@@ -690,6 +699,36 @@ impl ProcessesWidget {
                     self.popup_open = false;
                 }
                 _ => {}
+            }
+        }
+    }
+
+    fn is_usize_column (&self, v: usize) -> bool {
+        v <= 2 || v == 5
+        
+    }
+
+    fn is_string_column (&self, v: usize) -> bool {
+        v == 3 || v == 6 || v == 7 || v == 11 || v == 4
+
+    }
+
+    pub fn get_help_text(&self) -> &str {
+        let i = self.column_index;
+        match self.filter_index {
+            Some(i) => {
+                if self.is_string_column(i) || self.is_usize_column(i) {
+                    ", f: filter, r: reset filter"
+                } else {
+                    ", r: reset filter"
+                }
+            }
+            None => {
+                if self.is_string_column(i) || self.is_usize_column(i) {
+                    ", f: filter"
+                } else {
+                    ""
+                }
             }
         }
     }
