@@ -80,6 +80,8 @@ pub fn update_niceness(pid: usize, new_niceness: i8) {
 
 /// Get the millis since Day 0 (01.01.1970)
 ///
+/// see: answer by shepmaster https://stackoverflow.com/questions/26593387/how-can-i-get-the-current-time-in-milliseconds#44378174
+///
 /// # Panic
 ///
 /// This function won't panic.
