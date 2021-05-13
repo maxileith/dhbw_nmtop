@@ -62,54 +62,81 @@ impl ProcessList {
         let re = Regex::new("^/proc/(?P<tid>[0-9]+)$").unwrap();
         let re2 = Regex::new("^/proc/[0-9]+/task/(?P<pid>[0-9]+)$").unwrap();
 
-        ///////////////////////////////////////
-        // iterate through thread groups
-        ///////////////////////////////////////
-        let tg_dirs = match read_dir("/proc") {
+        // get to know all possible thread group directories
+        let proc_dirs = match read_dir("/proc") {
             Ok(x) => x,
             Err(_) => return,
         };
-        for tg in tg_dirs {
+        ///////////////////////////////////////
+        // iterate through thread groups
+        ///////////////////////////////////////
+        for tg in proc_dirs {
             let tg = match tg {
+                Ok(x) => x.path(),
+                Err(_) => continue,
+            };
+            // the path has to be a directory to be a thread group
+            if !tg.is_dir() {
+                continue;
+            }
+            // convert tg to string
+            let tg = match tg.to_str() {
+                Some(x) => x,
+                _ => continue,
+            };
+            // check if directory is a thread group by checking against the expected pattern
+            if !re.is_match(tg) {
+                continue;
+            }
+            // get thread group id from regex
+            let tid = match re.captures(tg) {
+                Some(x) => x.get(1).map_or("", |m| m.as_str()),
+                _ => continue,
+            };
+            // get to know all processes of the thread group
+            let p_dirs = match read_dir(format!("/proc/{}/task", tid)) {
                 Ok(x) => x,
                 Err(_) => continue,
             };
-            let tg = tg.path();
-            if tg.is_dir() {
-                let tg = tg.to_str().unwrap();
-                // check if dir is thread group
-                if re.is_match(tg) {
-                    let tid = re.captures(tg).unwrap().get(1).map_or("", |m| m.as_str());
-
-                    ///////////////////////////////////////
-                    // iterate through processes
-                    ///////////////////////////////////////
-                    let p_dirs = match read_dir(format!("/proc/{}/task", tid)) {
-                        Ok(x) => x,
-                        Err(_) => continue,
-                    };
-                    for p in p_dirs {
-                        let p = match p {
-                            Ok(x) => x,
-                            Err(_) => continue,
-                        };
-                        let p = p.path();
-                        if p.is_dir() {
-                            let p = p.to_str().unwrap();
-                            // check if dir is process
-                            if re2.is_match(p) {
-                                let pid =
-                                    re2.captures(p).unwrap().get(1).map_or("", |m| m.as_str());
-
-                                self.processes.push(Process::new(
-                                    pid.parse::<usize>().unwrap(),
-                                    tid.parse::<usize>().unwrap(),
-                                    &mut self.cpu_times,
-                                ))
-                            }
-                        }
-                    }
+            ///////////////////////////////////////
+            // iterate through processes
+            ///////////////////////////////////////
+            for p in p_dirs {
+                let p = match p {
+                    Ok(x) => x.path(),
+                    Err(_) => continue,
+                };
+                // the path has to be a directory to be a process
+                if !p.is_dir() {
+                    continue;
                 }
+                // convert p to string
+                let p = match p.to_str() {
+                    Some(x) => x,
+                    _ => continue,
+                };
+                // check if directory is a process by checking against the expected pattern
+                if !re2.is_match(p) {
+                    continue;
+                }
+                // get process id from regex
+                let pid = match re2.captures(p) {
+                    Some(x) => x.get(1).map_or("", |m| m.as_str()),
+                    _ => continue,
+                };
+                ///////////////////////////////
+                // Found process -> add to list
+                ///////////////////////////////
+                let pid = match pid.parse::<usize>() {
+                    Ok(x) => x,
+                    Err(_) => continue,
+                };
+                let tid = match tid.parse::<usize>() {
+                    Ok(x) => x,
+                    Err(_) => continue,
+                };
+                self.processes
+                    .push(Process::new(pid, tid, &mut self.cpu_times))
             }
         }
     }
@@ -123,8 +150,7 @@ pub struct Process {
     pub state: String,
     pub parent_pid: usize,
     pub thread_group_id: usize,
-    pub virtual_memory_size: usize,
-    pub swapped_memory: usize,
+    pub memory: usize,
     pub command: String,
     pub threads: usize,
     pub user: String,
@@ -179,12 +205,13 @@ impl Process {
             match name {
                 "Name" => (*self).name = value,
                 "Umask" => (*self).umask = value,
-                "VmSize" => {
-                    (*self).virtual_memory_size =
-                        value[0..value.len() - 3].parse::<usize>().unwrap()
-                }
-                "VmSwap" => {
-                    (*self).swapped_memory = value[0..value.len() - 3].parse::<usize>().unwrap()
+                "RssAnon" => {
+                    // value.len() - 3 cuts of " KB" at the end of the string
+                    let value = match value[0..value.len() - 3].parse::<usize>() {
+                        Ok(x) => x,
+                        Err(_) => 0,
+                    };
+                    (*self).memory = value;
                 }
                 _ => continue,
             }
@@ -279,7 +306,6 @@ impl Process {
             Some(x) => *x,
             None => Default::default(),
         };
-
         let seconds: f32 = (util::get_millis() - old_cpu_times.millis) as f32 / 1000.0;
 
         let time = self.cpu_time - old_cpu_times.exec_time;
@@ -394,9 +420,8 @@ impl ProcessesWidget {
                 7 => a.state.partial_cmp(&b.state).unwrap_or(Ordering::Equal),
                 8 => a.nice.partial_cmp(&b.nice).unwrap_or(Ordering::Equal),
                 9 => a.cpu_usage.partial_cmp(&b.cpu_usage).unwrap_or(Ordering::Equal),
-                10 => a.virtual_memory_size.partial_cmp(&b.virtual_memory_size).unwrap_or(Ordering::Equal),
-                11 => a.swapped_memory.partial_cmp(&b.swapped_memory).unwrap_or(Ordering::Equal),
-                12 => a.command.partial_cmp(&b.command).unwrap_or(Ordering::Equal),
+                10 => a.memory.partial_cmp(&b.memory).unwrap_or(Ordering::Equal),
+                11 => a.command.partial_cmp(&b.command).unwrap_or(Ordering::Equal),
                 _ => Ordering::Equal,
             };
             
@@ -422,7 +447,7 @@ impl ProcessesWidget {
             Some(4) => p.umask.contains(&self.filter_value_str),
             Some(6) => p.name.contains(&self.filter_value_str),
             Some(7) => p.state.contains(&self.filter_value_str),
-            Some(12) => p.command.contains(&self.filter_value_str),
+            Some(11) => p.command.contains(&self.filter_value_str),
             _ => true,
         }
     }
@@ -431,10 +456,12 @@ impl ProcessesWidget {
         // Recv data from the data collector thread
         let processes_info = self.dc_thread.try_recv();
 
-        if processes_info.is_ok() {
-            self.process_list = processes_info.unwrap();
-
-            self.sort();
+        match processes_info {
+            Ok(x) => {
+                self.process_list = x;
+                self.sort();
+            }
+            Err(_) => (),
         }
     }
 
@@ -445,8 +472,8 @@ impl ProcessesWidget {
             .add_modifier(Modifier::REVERSED);
         let header_style = Style::default().bg(Color::DarkGray).fg(Color::White);
         let header_cells = [
-            "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "Nice", "CPU", "VM",
-            "SM", "CMD",
+            "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "Nice", "CPU",
+            "Mem", "CMD",
         ]
         .iter().enumerate().map(|(i, h)| {
             if i == self.column_index {
@@ -480,11 +507,7 @@ impl ProcessesWidget {
                 )));
                 cells.push(Cell::from(format!(
                     "{: >9}",
-                    util::to_humanreadable(p.virtual_memory_size * 1000)
-                )));
-                cells.push(Cell::from(format!(
-                    "{: >9}",
-                    util::to_humanreadable(p.swapped_memory * 1000)
+                    util::to_humanreadable(p.memory * 1024)
                 )));
                 cells.push(Cell::from(p.command.to_string()));
                 Row::new(cells).height(1)
@@ -503,7 +526,6 @@ impl ProcessesWidget {
                 Constraint::Length(6),
                 Constraint::Length(5),
                 Constraint::Length(8),
-                Constraint::Length(9),
                 Constraint::Length(9),
                 Constraint::Min(1),
             ])
@@ -638,7 +660,7 @@ impl ProcessesWidget {
                                 if i <= 2 || i == 8 {
                                     let input_value: usize = self.input.parse().unwrap_or_default();
                                     self.filter_value_usize = input_value;
-                                } else if i == 3 || i == 6 || i == 7 || i == 12 || i == 4{
+                                } else if i == 3 || i == 6 || i == 7 || i == 11 || i == 4{
                                     let input_value: String =
                                         self.input.parse().unwrap_or_default();
                                     self.filter_value_str = input_value;
