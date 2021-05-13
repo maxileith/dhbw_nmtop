@@ -1,5 +1,5 @@
 use std::io;
-use std::{thread, time};
+use std::{thread, time::Duration};
 use termion::{event::Key, raw::IntoRawMode};
 use tui::{
     backend::TermionBackend,
@@ -10,35 +10,51 @@ use tui::{
     Terminal,
 };
 
+// Module for reading keyboard events
 mod util;
+use util::InputHandler;
 
 // Module for reading CPU usage data
 mod cpu;
+use cpu::CpuWidget;
 
 // Module for reading memory usage data
 mod mem;
+use mem::MemoryWidget;
 
 // Module for reading disk usage data
 mod disk;
+use disk::DiskWidget;
 
 // Module for managing processes
 mod processes;
+use processes::ProcessesWidget;
 
 // Module for reading network usage
 mod network;
+use network::NetworkWidget;
 
+/// Defines the different application states.
 #[derive(PartialEq)]
 enum AppState {
+    /// During this state users can navigate between widgets
     Navigation,
+    /// During this state users can use current selected widget
     Interaction,
 }
 
+/// Stores necessary data to handle the application logic.
 struct AppLogic {
+    /// current application state [AppState]
     state: AppState,
+    /// current selected widget
     current_widget: WidgetType,
+    /// defines whether selected widget is highlighted
     show_selected_widget: bool,
 }
 
+/// Defines the supported widget types. A widget enables an user to to view specific system information like memory
+/// usage, processes or network usage.
 #[derive(PartialEq)]
 enum WidgetType {
     CPU,
@@ -49,7 +65,7 @@ enum WidgetType {
 }
 
 impl WidgetType {
-    // returns id, name
+    /// Returns a tuple containing the id and the name of a widget
     fn get_value(&self) -> (usize, &str) {
         match *self {
             WidgetType::Memory => (0, "Memory"),
@@ -60,6 +76,7 @@ impl WidgetType {
         }
     }
 
+    /// Returns a widget type by the associated id
     fn get_by_id(id: usize) -> WidgetType {
         match id {
             0 => WidgetType::Memory,
@@ -71,33 +88,32 @@ impl WidgetType {
         }
     }
 
+    /// Returns the help text of a widget
     fn get_help_text(&self) -> &str {
         match *self {
             WidgetType::Memory => "",
             WidgetType::Disk => ", up: previous, down: next",
             WidgetType::Network => "",
             WidgetType::CPU => ", SPACE: show/hide all cores",
-            WidgetType::Processes => ", s:sort, left/right:  move header, up/down: select process, n: niceness",
+            WidgetType::Processes => {
+                ", s:sort, left/right:  move header, up/down: select process, n: niceness"
+            }
         }
     }
 }
 
-struct DataWidget {
-    typ: WidgetType,
-}
-
-// TODO: user input to stop execution
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Terminal initialization
     let stdout = io::stdout().into_raw_mode()?;
     let backend = TermionBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut disk_widget = disk::DiskWidget::new();
-    let mut cpu_widget = cpu::CpuWidget::new();
-    let mut mem_widget = mem::MemoryWidget::new();
-    let mut processes_widget = processes::ProcessesWidget::new();
-    let mut network_widget = network::NetworkWidget::new();
+    // Initialize the different widgets
+    let mut disk_widget = DiskWidget::new();
+    let mut cpu_widget = CpuWidget::new();
+    let mut mem_widget = MemoryWidget::new();
+    let mut processes_widget = ProcessesWidget::new();
+    let mut network_widget = NetworkWidget::new();
 
     // Initialize app state
     let mut app = AppLogic {
@@ -107,10 +123,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Initialize input handler
-    let input_handler = util::InputHandler::new();
+    let input_handler = InputHandler::new();
 
-    let sleep_duration = time::Duration::from_millis(100);
+    // Define sleep duration for thread
+    const SLEEP_DURATION: Duration = Duration::from_millis(100);
 
+    // Define all used widgets
     let data_widgets = vec![
         WidgetType::Memory,
         WidgetType::Disk,
@@ -119,16 +137,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         WidgetType::Processes,
     ];
 
-    //let mut cpu_values = Vec::<f64>::new();
+    // Clear terminal - otherwise the screen may contain old data
     terminal.clear()?;
+
     loop {
+        // Update the widgets
         mem_widget.update();
         cpu_widget.update();
         processes_widget.update();
         disk_widget.update();
         network_widget.update();
 
-        let _ = terminal.draw(|f| {
+        // Draw the tui
+        terminal.draw(|f| {
+            // Define the top level layout
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(1)
@@ -142,6 +164,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .as_ref(),
                 )
                 .split(f.size());
+            // Split the box at the top in 3
             let boxes = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints(
@@ -158,13 +181,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             for dw in &data_widgets {
                 let (id, name) = dw.get_value();
 
+                // Determine whether the widget is selected
                 let mut selected = id == app.current_widget.get_value().0;
+                // Check whether navigation is active
                 let navigation = app.state == AppState::Navigation;
 
+                // If application is in interaction state, check whether the user wants to
+                // interact with the selected widget. The widget is highlighted if if the user wants to interact with it.
                 if !navigation {
                     selected = selected && app.show_selected_widget;
                 }
 
+                // Choose draw method based on widget
                 match dw {
                     WidgetType::Memory => {
                         mem_widget.draw(f, boxes[0], create_block(name, selected, navigation));
@@ -188,14 +216,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
+            // Generate help text which is displayed to user
             let mut help_text =
                 "ESC: navigation/interaction, v:view/hide selected widget".to_string();
 
             if app.show_selected_widget && app.state == AppState::Interaction {
-                help_text += app.current_widget.get_help_text(); // TODO: make constant
-                
+                // Append help text of current selected widget
+                help_text += app.current_widget.get_help_text();
+
+                // The help text needs to be dynamically appended since the processes widget provides multiple
+                // features depending on the internal state of the widget.
                 if app.current_widget == WidgetType::Processes {
-                    help_text += processes_widget.get_help_text(); 
+                    help_text += processes_widget.get_help_text();
                 }
             }
 
@@ -204,15 +236,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .block(Block::default())
                 .alignment(Alignment::Left);
             f.render_widget(help_paragraph, chunks[3]);
-        });
+        })?;
 
-        // Handle events
+        // Get new keyboard events 
         let event = input_handler.next();
 
         if event.is_ok() {
             let input = event.unwrap();
+
+            // Depending on the app state different key bindings are used
             match app.state {
                 AppState::Interaction => {
+                    // Input is handled by the selected widget
                     if app.show_selected_widget {
                         match app.current_widget {
                             WidgetType::Processes => {
@@ -232,17 +267,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                     }
-
+                    
+                    // Global shortcuts
                     match input {
-                        Key::Ctrl('c') => {
-                            terminal.clear()?;
-                            break;
-                        }
                         Key::Char('v') => {
                             app.show_selected_widget = !app.show_selected_widget;
                         }
+                        // Switch between app states
                         Key::Esc => {
                             app.state = AppState::Navigation;
+                        }
+                        Key::Ctrl('c') => {
+                            terminal.clear()?;
+                            break;
                         }
                         _ => {}
                     };
@@ -250,10 +287,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 AppState::Navigation => {
                     match input {
-                        Key::Ctrl('c') => {
-                            terminal.clear()?;
-                            break;
-                        }
+                        // Navigation
                         Key::Right => {
                             let (id, _) = app.current_widget.get_value();
                             if id < data_widgets.len() - 1 {
@@ -282,9 +316,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 app.current_widget = WidgetType::get_by_id(4);
                             }
                         }
+                        // Switch between app states
                         Key::Esc => {
                             app.state = AppState::Interaction;
                             app.show_selected_widget = true;
+                        }
+                        // Global exit shortcut
+                        Key::Ctrl('c') => {
+                            terminal.clear()?;
+                            break;
                         }
                         _ => {}
                     };
@@ -293,11 +333,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Sleep
-        thread::sleep(sleep_duration);
+        thread::sleep(SLEEP_DURATION);
     }
     Ok(())
 }
-
+/// Creates a new empty block which can be populated by a widget.
+/// The border style is dynamically modified based on the selection and navigation state.
 fn create_block(name: &str, selected: bool, navigation: bool) -> Block {
     let mut color = Color::Cyan;
 
