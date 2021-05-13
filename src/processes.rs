@@ -337,7 +337,6 @@ pub struct ProcessesWidget {
     popup_open: bool,
     input: String,
     input_mode: InputMode,
-    //columns: Vec<ColumnType>,
 }
 
 impl ProcessesWidget {
@@ -362,106 +361,51 @@ impl ProcessesWidget {
     }
 
     fn sort(&mut self) {
-        match self.sort_index {
-            0 => {
-                self.process_list
-                    .processes
-                    .sort_by(|a, b| a.pid.partial_cmp(&b.pid).unwrap_or(Ordering::Equal));
+        // FIXME: ugly, find better way
+        let sort_index = self.sort_index;
+        let sort_descending = self.sort_descending;
+        self.process_list.processes.sort_by(|a, b| {
+            let s = match sort_index {
+                0 => a.pid.partial_cmp(&b.pid).unwrap_or(Ordering::Equal),
+                1 => a.parent_pid.partial_cmp(&b.parent_pid).unwrap_or(Ordering::Equal),
+                2 => a.thread_group_id.partial_cmp(&b.thread_group_id).unwrap_or(Ordering::Equal),
+                3 => a.user.partial_cmp(&b.user).unwrap_or(Ordering::Equal),
+                4 => a.umask.partial_cmp(&b.umask).unwrap_or(Ordering::Equal),
+                5 => a.threads.partial_cmp(&b.threads).unwrap_or(Ordering::Equal),
+                6 => a.name.partial_cmp(&b.name).unwrap_or(Ordering::Equal),
+                7 => a.state.partial_cmp(&b.state).unwrap_or(Ordering::Equal),
+                8 => a.nice.partial_cmp(&b.nice).unwrap_or(Ordering::Equal),
+                9 => a.cpu_usage.partial_cmp(&b.cpu_usage).unwrap_or(Ordering::Equal),
+                10 => a.virtual_memory_size.partial_cmp(&b.virtual_memory_size).unwrap_or(Ordering::Equal),
+                11 => a.swapped_memory.partial_cmp(&b.swapped_memory).unwrap_or(Ordering::Equal),
+                12 => a.command.partial_cmp(&b.command).unwrap_or(Ordering::Equal),
+                _ => Ordering::Equal,
+            };
+            
+            if sort_descending {
+                Ordering::reverse(s)
+            } else {
+                s
             }
-            1 => {
-                self.process_list.processes.sort_by(|a, b| {
-                    a.parent_pid
-                        .partial_cmp(&b.parent_pid)
-                        .unwrap_or(Ordering::Equal)
-                });
-            }
-            2 => {
-                self.process_list.processes.sort_by(|a, b| {
-                    a.thread_group_id
-                        .partial_cmp(&b.thread_group_id)
-                        .unwrap_or(Ordering::Equal)
-                });
-            }
-            3 => {
-                self.process_list
-                    .processes
-                    .sort_by(|a, b| a.user.partial_cmp(&b.user).unwrap_or(Ordering::Equal));
-            }
-            4 => {
-                self.process_list
-                    .processes
-                    .sort_by(|a, b| a.umask.partial_cmp(&b.umask).unwrap_or(Ordering::Equal));
-            }
-            5 => {
-                self.process_list
-                    .processes
-                    .sort_by(|a, b| a.threads.partial_cmp(&b.threads).unwrap_or(Ordering::Equal));
-            }
-            6 => {
-                self.process_list
-                    .processes
-                    .sort_by(|a, b| a.name.partial_cmp(&b.name).unwrap_or(Ordering::Equal));
-            }
-            7 => {
-                self.process_list
-                    .processes
-                    .sort_by(|a, b| a.state.partial_cmp(&b.state).unwrap_or(Ordering::Equal));
-            }
-            8 => {
-                self.process_list
-                    .processes
-                    .sort_by(|a, b| a.nice.partial_cmp(&b.nice).unwrap_or(Ordering::Equal));
-            }
-            9 => {
-                self.process_list.processes.sort_by(|a, b| {
-                    a.cpu_usage
-                        .partial_cmp(&b.cpu_usage)
-                        .unwrap_or(Ordering::Equal)
-                });
-            }
-            10 => {
-                self.process_list.processes.sort_by(|a, b| {
-                    a.virtual_memory_size
-                        .partial_cmp(&b.virtual_memory_size)
-                        .unwrap_or(Ordering::Equal)
-                });
-            }
-            11 => {
-                self.process_list.processes.sort_by(|a, b| {
-                    a.swapped_memory
-                        .partial_cmp(&b.swapped_memory)
-                        .unwrap_or(Ordering::Equal)
-                });
-            }
-            12 => {
-                self.process_list
-                    .processes
-                    .sort_by(|a, b| a.command.partial_cmp(&b.command).unwrap_or(Ordering::Equal));
-            }
-            _ => {}
-        }
-
-        if self.sort_descending {
-            self.process_list.processes.reverse();
-        }
+        });
     }
 
     // FIXME: when disable filtering and reopening the popup the table disappears
     // FIXME: somehow a panick is generated
     fn filter(&self, p: &Process) -> bool {
-       match self.filter_index {
+        match self.filter_index {
             // Numbers
             Some(0) => p.pid == self.filter_value_usize,
             Some(1) => p.parent_pid == self.filter_value_usize,
             Some(2) => p.thread_group_id == self.filter_value_usize,
             Some(5) => p.threads == self.filter_value_usize,
-            // Strings 
+            // Strings
             Some(3) => p.user.contains(&self.filter_value_str),
             Some(6) => p.name.contains(&self.filter_value_str),
             Some(7) => p.state.contains(&self.filter_value_str),
             Some(12) => p.command.contains(&self.filter_value_str),
             _ => true,
-       }
+        }
     }
 
     pub fn update(&mut self) {
@@ -485,9 +429,7 @@ impl ProcessesWidget {
             "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "Nice", "CPU", "VM",
             "SM", "CMD",
         ]
-        .iter()
-        .enumerate()
-        .map(|(i, h)| {
+        .iter().enumerate().map(|(i, h)| {
             if i == self.column_index {
                 Cell::from(*h).style(Style::default().fg(Color::Yellow).bg(Color::DarkGray))
             } else {
@@ -678,7 +620,8 @@ impl ProcessesWidget {
                                     let input_value: usize = self.input.parse().unwrap_or_default();
                                     self.filter_value_usize = input_value;
                                 } else if i == 3 || i == 6 || i == 7 || i == 12 {
-                                    let input_value: String = self.input.parse().unwrap_or_default();
+                                    let input_value: String =
+                                        self.input.parse().unwrap_or_default();
                                     self.filter_value_str = input_value;
                                 }
                             }
