@@ -465,8 +465,10 @@ impl ProcessesWidget {
 
         match processes_info {
             Ok(x) => {
-                self.process_list = x;
-                self.sort();
+                if !self.popup_open {
+                    self.process_list = x;
+                    self.sort();
+                }
             }
             Err(_) => (),
         }
