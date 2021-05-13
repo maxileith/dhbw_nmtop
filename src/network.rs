@@ -15,7 +15,7 @@ use tui::{
 use crate::util;
 
 const PROC_NET_DEV: &str = "/proc/net/dev";
-
+// all information which are used or can be used later
 #[derive(Default, Debug)]
 pub struct NetworkInfo {
     pub interface: String,
@@ -34,12 +34,13 @@ pub fn get_network_io() -> Result<NetworkInfo, Box<dyn std::error::Error>> {
     let reader = BufReader::new(file);
     let mut network_info: NetworkInfo = Default::default();
 
+    // read network io info with iterator
     let mut line_iterator = reader.lines();
 
     // skipping the first two lines containing a description
     line_iterator.next();
     line_iterator.next();
-    // filter local network activity
+    // filter / skip local network activity
     line_iterator.next();
 
     for line in line_iterator {
@@ -51,8 +52,10 @@ pub fn get_network_io() -> Result<NetworkInfo, Box<dyn std::error::Error>> {
         // collect iterator into vector
         let row_values = row.split_whitespace().collect::<Vec<_>>();
 
-        // unwrap_or_default to match "normal" thread error, where a Default::default will be returned
-        if row_values[1].parse::<usize>().unwrap() > network_info.rec_bytes {
+        // check for the network adapter with the most incoming trafic -> row_values[1] is the value for total bytes recieved
+        // unwrap_or_default, because the default (0) will always be skipped
+        if row_values[1].parse::<usize>().unwrap_or_default() > network_info.rec_bytes {
+            // unwrap_or_default to match "normal" thread error, where a Default::default will be returned -> DiskWidget handels defaults
             network_info.interface = row_values[0].to_string();
             network_info.rec_bytes = row_values[1].parse().unwrap_or_default();
             network_info.rec_packets = row_values[2].parse().unwrap_or_default();
@@ -107,7 +110,6 @@ impl NetworkWidget {
         let network_info = self.dc_thread.try_recv();
 
         if network_info.is_ok() {
-            //FIXME: uglyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
             self.last_info = NetworkInfo {
                 interface: self.current_info.interface.clone(),
                 rec_bytes: self.current_info.rec_bytes,
@@ -120,6 +122,7 @@ impl NetworkWidget {
                 send_drop: self.current_info.send_drop,
             };
 
+            // we network_info is ok / safe at this point
             self.current_info = network_info.unwrap();
         }
     }
@@ -129,14 +132,16 @@ impl NetworkWidget {
             return;
         }
 
+        // the factor is based on the refreshing-rate of the ui (500ms)
         let receiving =
             util::to_humanreadable((self.current_info.rec_bytes - self.last_info.rec_bytes) * 2)
                 + "/s";
         let sending =
             util::to_humanreadable((self.current_info.send_bytes - self.last_info.send_bytes) * 2)
                 + "/s";
-        let text: Vec<tui::text::Spans>;
 
+        let text: Vec<tui::text::Spans>;
+        // adjust information to size, showing less informations on smaller screens
         if rect.width > 25 {
             let total_received = util::to_humanreadable(self.current_info.rec_bytes);
             let total_sent = util::to_humanreadable(self.current_info.send_bytes);

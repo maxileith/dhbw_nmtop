@@ -57,7 +57,7 @@ pub fn show_ram_usage() -> Result<MemInfo, Box<dyn std::error::Error>> {
         }
     }
 
-    // match thread in error case -> returning Default::default.
+    // handling default-values in MemoryWidget as error
     mem_info.mem_total = mem_numbers[0].parse().unwrap_or_default();
     mem_info.mem_free = mem_numbers[1].parse().unwrap_or_default();
     mem_info.mem_available = mem_numbers[2].parse().unwrap_or_default();
@@ -88,7 +88,7 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<MemInfo> {
 }
 
 const SIZES: [&str; 4] = [" KiB", " MiB", " GiB", " TiB"];
-
+// calc the mem_sizes in u32 to fit metric, use binary base
 pub fn calc_ram_to_fit_size(mem_size: u32) -> String {
     let mut count = 0;
 
@@ -104,11 +104,6 @@ pub fn calc_ram_to_fit_size(mem_size: u32) -> String {
     }
 
     let size_string: String = format!("{:.1}", size);
-    /*if size > 10.0 {
-        size_string = format!("{:.0}", size);
-    } else {
-        size_string = format!("{:.1}", size);
-    }*/
 
     size_string + SIZES[count]
 }
@@ -146,14 +141,15 @@ impl MemoryWidget {
         // Render block
         f.render_widget(block, rect);
 
-        if self.mem_info.mem_total == 0 || self.mem_info.swap_total == 0 {
+        // check for no memory, return cause of error
+        // may add error-message to display 
+        if self.mem_info.mem_total == 0 {
             return;
         }
 
-        // calc mem infos
+        // calc mem infos for memory
         let mem_usage = ((self.mem_info.mem_total - self.mem_info.mem_available) as f64)
             / (self.mem_info.mem_total as f64);
-        let mem_swap = self.mem_info.swap_cached as f64 / self.mem_info.swap_total as f64;
         let label_mem = format!("{:.2}%", mem_usage * 100.0);
         let title_mem = "Memory: ".to_string()
             + &calc_ram_to_fit_size(self.mem_info.mem_total - self.mem_info.mem_available)
@@ -171,6 +167,13 @@ impl MemoryWidget {
             .ratio(mem_usage);
         f.render_widget(gauge_mem, block_chunks[0]);
 
+        //check whether swap exists, otherwise return
+        if self.mem_info.swap_total == 0 {
+            return
+        }
+
+        // calc infos for swap-memory
+        let mem_swap = self.mem_info.swap_cached as f64 / self.mem_info.swap_total as f64;
         let label_swap = format!("{:.2}%", mem_swap * 100.0);
         let title_swap = "Swap: ".to_string()
             + &calc_ram_to_fit_size(self.mem_info.swap_total - self.mem_info.swap_free)
