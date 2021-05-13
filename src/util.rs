@@ -78,6 +78,11 @@ pub fn update_niceness(pid: usize, new_niceness: i8) {
     }
 }
 
+/// Get the millis since Day 0 (01.01.1970)
+///
+/// # Panic
+///
+/// This function won't panic.
 pub fn get_millis() -> usize {
     let tmp = SystemTime::now()
         .duration_since(UNIX_EPOCH)

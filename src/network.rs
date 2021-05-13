@@ -30,14 +30,14 @@ pub struct NetworkInfo {
 }
 
 /// Get the current network I/O
-/// 
-/// This function reads the current newtwork information from "/proc/net/dev" and returns a Result.
+///
+/// This function reads the current network information from "/proc/net/dev" and returns a Result.
 /// The Result is either a NetworkInfo-objet or an Error.
-/// 
-/// See https://www.kernel.org/doc/html/latest/networking/statistics.html for morte information.
-/// 
+///
+/// See https://www.kernel.org/doc/html/latest/networking/statistics.html for more information.
+///
 /// # Panic
-/// 
+///
 /// This function won't panic.
 pub fn get_network_io() -> Result<NetworkInfo, Box<dyn std::error::Error>> {
     let file = File::open(PROC_NET_DEV)?;
@@ -81,12 +81,12 @@ pub fn get_network_io() -> Result<NetworkInfo, Box<dyn std::error::Error>> {
     Ok(network_info)
 }
 
-/// Initializes a thread to collect and send the network information eacht 0.5 seconds.
-/// 
+/// Initializes a thread to collect and send the network information each 0.5 seconds.
+///
 /// It will send a NetworkInfo-object with default values if an error occurs in get_network_io.
-/// 
+///
 /// # Panic
-/// 
+///
 /// This function won't panic.
 pub fn init_data_collection_thread() -> mpsc::Receiver<NetworkInfo> {
     let (tx, rx) = mpsc::channel();
@@ -115,9 +115,9 @@ pub struct NetworkWidget {
 
 impl NetworkWidget {
     /// Returns a new NetworkWidget with default values and a new data thread.
-    /// 
+    ///
     /// # Panic
-    /// 
+    ///
     /// This function won't panic.
     pub fn new() -> Self {
         Self {
@@ -127,10 +127,10 @@ impl NetworkWidget {
         }
     }
     /// Updates the current information and rotates the older one
-    /// 
+    ///
     /// # Panic
-    /// 
-    /// This function won't panic. 
+    ///
+    /// This function won't panic.
     pub fn update(&mut self) {
         // Recv data from the data collector thread
         let network_info = self.dc_thread.try_recv();
@@ -146,22 +146,22 @@ impl NetworkWidget {
         }
     }
     /// Draws all network information in a given Rect.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * 'f' - A refrence to the terminal interface for rendering
     /// * 'rect' - A rectangle used to hint the area the widget gets rendered in
     /// * 'block' - A Box with borders and title which contains the drawn widget
-    /// 
+    ///
     /// # Panic
-    /// 
+    ///
     /// This function won't panic.
-    /// 
+    ///
     /// # Usage
-    /// 
+    ///
     /// This function draws the NetworkInfo based on current_info and last_info.
     /// Call the update function before to get current information.
-    /// 
+    ///
     /// Call the update and draw function each 0.5seconds to get precise meassurements.
     pub fn draw<B: Backend>(&self, f: &mut Frame<B>, rect: Rect, block: Block) {
         if self.last_info.rec_bytes > self.current_info.rec_bytes {
