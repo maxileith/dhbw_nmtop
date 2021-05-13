@@ -41,10 +41,11 @@ pub fn get_disks_usage() -> Vec<DiskInfo> {
 
     // add disks to array
     for line in df_output_string.lines() {
-        //println!("{}", line.starts_with("/dev/"));
 
         if line.starts_with("/dev/") {
             let mut sliced_line = line.split_whitespace();
+            // create new DiskInfo while iterating through a line
+            // has to be changed when the output of the "df" command changes its order
             let disk_info = DiskInfo {
                 filesystem: match sliced_line.next() {
                     Some(x) => x.replace("/dev", "").to_string(),
@@ -85,7 +86,6 @@ pub fn get_disks_usage() -> Vec<DiskInfo> {
             disk_array.push(disk_info);
         }
     }
-    //println!("{:?}", disk_array);
 
     disk_array
 }
@@ -107,7 +107,7 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<Vec<DiskInfo>> {
 }
 
 const SIZES: [&str; 4] = ["K", "M", "G", "T"];
-
+// https://en.wikipedia.org/wiki/Df_(Unix)
 pub fn calc_disk_size(disk_size: usize) -> String {
     let mut count = 0;
 
@@ -116,20 +116,18 @@ pub fn calc_disk_size(disk_size: usize) -> String {
     }
 
     let mut size = disk_size as f64;
+    // the blocks are not 1k but 1024byte-units
     size *= 1.024;
 
+    // calculate the Size to match the gnome system monitor -> decimal base
     while size > 1000.0 {
         size = size / 1000.0;
         count += 1
     }
 
+    // format size for ui
     let size_string: String = format!("{:.1}", size);
-    /*if size > 10.0 {
-        size_string = format!("{:.0}", size);
-    } else {
-        size_string = format!("{:.1}", size);
-    }*/
-
+    // append metric
     size_string + SIZES[count]
 }
 
@@ -183,7 +181,7 @@ impl DiskWidget {
             .column_spacing(2);
         f.render_widget(table, rect);
     }
-
+    // scrolling up and down 
     pub fn handle_input(&mut self, key: Key) {
         match key {
             Key::Down => {
@@ -201,6 +199,7 @@ impl DiskWidget {
     }
 }
 
+// adjust tablesize to screen -> less details on smaller screens
 fn size_columns(area_width: u16) -> Vec<Constraint> {
     let width = area_width - 2;
     if width >= 39 + 10 {
