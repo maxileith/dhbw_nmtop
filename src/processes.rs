@@ -482,28 +482,44 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<ProcessList> {
 }
 
 #[derive(PartialEq)]
+/// Defines whether the popup input is for the niceness or the filter value.
 enum InputMode {
     Niceness,
     Filter,
 }
 
+/// Stores the state data of the widget.
 pub struct ProcessesWidget {
+    /// Used for the selection of the current row.
     table_state: TableState,
+    /// Index of the current selected item.
     item_index: usize,
+    /// Index of column to sort by.
     sort_index: usize,
+    /// Index of current selected column.
     column_index: usize,
+    /// Index of column to filter by.
     filter_index: Option<usize>,
+    /// Store filter value as String
     filter_value_str: String,
+    /// Store filter value as usize
     filter_value_usize: usize,
+    /// Sort the column descending or ascending.
     sort_descending: bool,
+    /// Stores data inside the table.
     process_list: ProcessList,
+    /// Used to receive data from the thread which reads process information.
     dc_thread: mpsc::Receiver<ProcessList>,
+    /// Store whether the popup is open or closed
     popup_open: bool,
+    /// Temporary field to store popup input.
     input: String,
+    /// Store input mode.
     input_mode: InputMode,
 }
 
 impl ProcessesWidget {
+    /// Creates new process widget with default values.
     pub fn new() -> Self {
         let mut a = Self {
             table_state: TableState::default(),
@@ -524,6 +540,7 @@ impl ProcessesWidget {
         a
     }
 
+    /// Sorts process data ascending or descending by the current selected column.
     fn sort(&mut self) {
         let sort_index = self.sort_index;
         let sort_descending = self.sort_descending;
@@ -558,6 +575,7 @@ impl ProcessesWidget {
         });
     }
 
+    /// Filters process data by the current selected filter column and the supplied value.
     fn filter(&self, p: &Process) -> bool {
         match self.filter_index {
             // Numbers
@@ -575,6 +593,7 @@ impl ProcessesWidget {
         }
     }
 
+    /// Retrieves information from the update thread and store the new data in the widget.
     pub fn update(&mut self) {
         // Recv data from the data collector thread
         let processes_info = self.dc_thread.try_recv();
@@ -590,12 +609,16 @@ impl ProcessesWidget {
         }
     }
 
+    /// Draws the widget using the data stored in the widget.
     pub fn draw<B: Backend>(&mut self, f: &mut Frame<B>, rect: Rect, block: Block) {
+        // Create styles
         let selected_style = Style::default()
             .fg(Color::White)
             .bg(Color::DarkGray)
             .add_modifier(Modifier::REVERSED);
         let header_style = Style::default().bg(Color::DarkGray).fg(Color::White);
+        
+        // Create new header row in table 
         let header_cells = [
             "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "Nice", "CPU",
             "Mem", "CMD",
@@ -612,6 +635,7 @@ impl ProcessesWidget {
 
         let header = Row::new(header_cells).style(header_style).height(1);
 
+        // Populate rows of table
         let rows = self
             .process_list
             .processes
@@ -639,6 +663,8 @@ impl ProcessesWidget {
                 cells.push(Cell::from(p.command.to_string()));
                 Row::new(cells).height(1)
             });
+
+        // Create new table
         let table = Table::new(rows)
             .header(header)
             .highlight_style(selected_style)
@@ -659,12 +685,15 @@ impl ProcessesWidget {
             .block(block);
         f.render_stateful_widget(table, rect, &mut self.table_state);
 
+        // Draw popup over table
         if self.popup_open {
             self.draw_popup(f, &rect);
         }
     }
 
+    /// Draw popup over the table. 
     fn draw_popup<B: Backend>(&mut self, f: &mut Frame<B>, rect: &Rect) {
+        // Define postion of popup
         let horizontal = Layout::default()
             .direction(Direction::Horizontal)
             .constraints(
@@ -677,6 +706,7 @@ impl ProcessesWidget {
             )
             .split(*rect);
 
+        // Create popup
         let popup = Layout::default()
             .direction(Direction::Vertical)
             .constraints(
@@ -689,6 +719,7 @@ impl ProcessesWidget {
             )
             .split(horizontal[1]);
 
+        // Clear area for popup - overrides existing data.
         let clear = Layout::default()
             .direction(Direction::Vertical)
             .constraints(
@@ -706,9 +737,10 @@ impl ProcessesWidget {
             Spans::from(format!("{}", self.input)),
             Spans::default(),
             Spans::default(),
-            Spans::from("(C)ancel"),
+            Spans::from("CTRL-x to cancel"),
             Spans::from("Press Enter to apply"),
         ];
+
         let block = Block::default()
             .style(Style::default().fg(Color::Yellow))
             .title("Input")
@@ -717,10 +749,12 @@ impl ProcessesWidget {
         f.render_widget(Clear, clear[1]);
         f.render_widget(paragraph, popup[1]);
     }
-
+    
+    /// Handles keyboard input
     pub fn handle_input(&mut self, key: Key) {
         if !self.popup_open {
             match key {
+                // Navigate by row 
                 Key::Down => {
                     if self.item_index < self.process_list.processes.len() - 1 {
                         self.item_index += 1;
@@ -733,30 +767,39 @@ impl ProcessesWidget {
                         self.table_state.select(Some(self.item_index));
                     }
                 }
+
+                // Navigate by column
                 Key::Right => {
                     if self.column_index < 12 {
                         self.column_index += 1;
                     }
-                }
-                Key::Char('f') => {
-                    self.input_mode = InputMode::Filter;
-                    self.popup_open = !self.popup_open;
-                }
-                Key::Char('r') => {
-                    self.filter_index = None;
-                }
-                Key::Char('k') => {
-                    util::kill_process(self.process_list.processes[self.item_index].tid)
-                }
-                Key::Char('n') => {
-                    self.input_mode = InputMode::Niceness;
-                    self.popup_open = !self.popup_open;
                 }
                 Key::Left => {
                     if self.column_index > 0 {
                         self.column_index -= 1;
                     }
                 }
+                // Filter by selected column
+                Key::Char('f') => {
+                    if self.is_usize_column(self.column_index) || self.is_string_column(self.column_index) {
+                        self.input_mode = InputMode::Filter;
+                        self.popup_open = !self.popup_open;
+                    }
+                }
+                // Reset filter
+                Key::Char('r') => {
+                    self.filter_index = None;
+                }
+                // Kill process
+                Key::Char('k') => {
+                    util::kill_process(self.process_list.processes[self.item_index].tid)
+                }
+                // Change niceness of process
+                Key::Char('n') => {
+                    self.input_mode = InputMode::Niceness;
+                    self.popup_open = !self.popup_open;
+                }
+                // Sort by current selected column
                 Key::Char('s') => {
                     if self.sort_index == self.column_index {
                         self.sort_descending = !self.sort_descending;
@@ -769,25 +812,31 @@ impl ProcessesWidget {
             }
         } else {
             match key {
+                // Clear input buffer 
                 Key::Backspace => {
                     self.input.pop();
                 }
+                // Input is finished
                 Key::Char('\n') => {
                     let input_value = self.input.parse().unwrap_or_default();
 
+                    // Update niceness
                     if self.input_mode == InputMode::Niceness {
                         util::update_niceness(
                             self.process_list.processes[self.item_index].tid,
                             input_value,
                         );
                     } else if self.input_mode == InputMode::Filter {
+                        // Filter by selected column
                         self.filter_index = Some(self.column_index);
                         match self.filter_index {
                             Some(i) => {
                                 if self.is_usize_column(i) {
+                                    // Store value in usize field.
                                     let input_value: usize = self.input.parse().unwrap_or_default();
                                     self.filter_value_usize = input_value;
                                 } else if self.is_string_column(i) {
+                                    // Store value in string field.
                                     let input_value: String =
                                         self.input.parse().unwrap_or_default();
                                     self.filter_value_str = input_value;
@@ -796,13 +845,17 @@ impl ProcessesWidget {
                             None => {}
                         }
                     }
+                    // Clear buffer
+                    self.input.clear();
+                    // Close popup
+                    self.popup_open = false;
+                }
+                // Cancel input
+                Key::Ctrl('x') => {
                     self.input.clear();
                     self.popup_open = false;
                 }
-                Key::Char('c') => {
-                    self.input.clear();
-                    self.popup_open = false;
-                }
+                // Store pressed key in temporary buffer.
                 Key::Char(key) => {
                     if self.input_mode == InputMode::Filter {
                         self.input.push(key)
@@ -812,6 +865,7 @@ impl ProcessesWidget {
                         }
                     }
                 }
+                // Close the popup.
                 Key::Esc => {
                     self.input.clear();
                     self.popup_open = false;
@@ -820,21 +874,26 @@ impl ProcessesWidget {
             }
         }
     }
-
+    
+    /// Returns whether the column is storing usize data.
     fn is_usize_column (&self, v: usize) -> bool {
         v <= 2 || v == 5
         
     }
 
+    /// Returns whether the column is storing string data.
     fn is_string_column (&self, v: usize) -> bool {
         v == 3 || v == 6 || v == 7 || v == 11 || v == 4
 
     }
 
+    /// Returns dynamic help text based on current widget state. 
     pub fn get_help_text(&self) -> &str {
         let i = self.column_index;
+        // If the filter function is active.
         match self.filter_index {
             Some(i) => {
+                // Check whether it is possible to filter by the current column
                 if self.is_string_column(i) || self.is_usize_column(i) {
                     ", f: filter, r: reset filter"
                 } else {
@@ -842,6 +901,7 @@ impl ProcessesWidget {
                 }
             }
             None => {
+                // Check whether it is possible to filter by the current column
                 if self.is_string_column(i) || self.is_usize_column(i) {
                     ", f: filter"
                 } else {

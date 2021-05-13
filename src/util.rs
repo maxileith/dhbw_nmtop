@@ -15,7 +15,7 @@ impl InputHandler {
     /// Create a new channel and read keyboard events from stdin.
     /// The keyboard events are only sent at certain intervals to the receiving end, other events
     /// are discarded.
-    /// The interval is necessary to prevent the flooding of the receiver with events since the 
+    /// The interval is necessary to prevent the flooding of the receiver with events since the
     /// receiver may need some processing time.
     /// Some caveats of this approach are the input lag in text fields and occasionaly a key press
     /// is not detected.
