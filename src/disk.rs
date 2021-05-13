@@ -24,6 +24,15 @@ pub struct DiskInfo {
     pub mountpoint: String,
 }
 
+/// Get current disk usage
+/// 
+/// This function returns a Vector containing a DiskInfo for each disk.
+/// 
+/// See ( https://en.wikipedia.org/wiki/Df_(Unix) ) for mor informations on the "df" command.
+/// 
+/// # Panic
+/// 
+/// This function will panic if the "df" output is not ok or the "df" output could not be parsed.
 pub fn get_disks_usage() -> Vec<DiskInfo> {
     let mut disk_array = Vec::new();
     // execute "df"
@@ -90,6 +99,11 @@ pub fn get_disks_usage() -> Vec<DiskInfo> {
     disk_array
 }
 
+/// Initializes a thread to collect and send the disk usage eacht 0.5 seconds.
+/// 
+/// # Panic
+/// 
+/// This function won't panic.
 pub fn init_data_collection_thread() -> mpsc::Receiver<Vec<DiskInfo>> {
     let (tx, rx) = mpsc::channel();
     let dur = time::Duration::from_millis(500);
@@ -107,7 +121,17 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<Vec<DiskInfo>> {
 }
 
 const SIZES: [&str; 4] = ["K", "M", "G", "T"];
-// https://en.wikipedia.org/wiki/Df_(Unix)
+/// Calculates the disk size to fit decimal metrics.
+/// 
+/// See https://en.wikipedia.org/wiki/Df_(Unix) for more information on block-sizes.
+/// 
+/// # Arguments
+/// 
+/// * 'disk_size' - The count of 1K-blocks or 1024-byte-units
+/// 
+/// # Panic
+/// 
+/// This function won't panic.
 pub fn calc_disk_size(disk_size: usize) -> String {
     let mut count = 0;
 
@@ -138,6 +162,11 @@ pub struct DiskWidget {
 }
 
 impl DiskWidget {
+    /// Returns a new DiskWidget with default values and a new data thread.
+    /// 
+    /// # Panic
+    /// 
+    /// This funxtion won't panic.
     pub fn new() -> Self {
         Self {
             item_index: 0,
@@ -145,7 +174,11 @@ impl DiskWidget {
             dc_thread: init_data_collection_thread(),
         }
     }
-
+    /// Updates the disk_info of the DiskWidget
+    /// 
+    /// # Panic
+    /// 
+    /// This function won't panic.
     pub fn update(&mut self) {
         // Recv data from the data collector thread
 
@@ -155,7 +188,22 @@ impl DiskWidget {
             self.disk_info = result.unwrap();
         }
     }
-
+    /// Draws disk information in a given Rect.
+    /// 
+    /// # Arguments
+    /// 
+    /// * 'f' - A refrence to the terminal interface for rendering
+    /// * 'rect' - A rectangle used to hint the area the widget gets rendered in
+    /// * 'block' - A Box with borders and title which contains the drawn widget
+    /// 
+    /// # Panic
+    /// 
+    /// This function won't panic.
+    /// 
+    /// # Usage
+    /// 
+    /// This function draws the DiskWidget based on its disk_info.
+    /// Call the update function before to get current information.
     pub fn draw<B: Backend>(&self, f: &mut Frame<B>, rect: Rect, block: Block) {
         //draw disk info TODO: divide into own function
         let header_cells = ["Partition", "Available", "In Use", "Total", "Used", "Mount"]
@@ -181,7 +229,9 @@ impl DiskWidget {
             .column_spacing(2);
         f.render_widget(table, rect);
     }
-    // scrolling up and down 
+    /// Input Handler for the DiskWidget.
+    /// 
+    /// Enables Table to scroll up and down.
     pub fn handle_input(&mut self, key: Key) {
         match key {
             Key::Down => {
@@ -199,7 +249,7 @@ impl DiskWidget {
     }
 }
 
-// adjust tablesize to screen -> less details on smaller screens
+/// Adjust tablesize to screen resulting in less details on smaller screens.
 fn size_columns(area_width: u16) -> Vec<Constraint> {
     let width = area_width - 2;
     if width >= 39 + 10 {
