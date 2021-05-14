@@ -15,21 +15,39 @@ use tui::{
     widgets::{Axis, Block, Chart, Dataset, GraphType},
 };
 
-/// Represents a result row of the /proc/stat content
+use crate::util;
+
+/// Represents a cpu result row of the /proc/stat content
+///
 /// Time units are in USER_HZ or Jiffies
+/// See https://www.linuxhowtos.org/System/procstat.htm
 #[derive(Clone)]
 pub struct ProcStatRow {
+    /// Name of the CPU
     pub cpu_name: String,
+    /// Normal processes user mode
     pub normal_proc_user_mode: u32,
+    /// Niced proccesses user mode
     pub nice_proc_user_mode: u32,
+    /// Proccesses kernel mode
     pub system_proc_kernel_mode: u32,
     pub idle: u32,
-    pub iowait: u32,  // waiting for I/O
-    pub irq: u32,     // servicing interupts
-    pub softirq: u32, // servicing softirqs
+    /// waiting for I/O
+    pub iowait: u32,
+    /// servicing interrupts
+    pub irq: u32,
+    /// servicing softirqs
+    pub softirq: u32,
 }
 
 impl ProcStatRow {
+    /// Calculate total cpu calculation time.
+    ///
+    /// Adds differnt cpu usage time together.
+    ///
+    /// # Panic
+    ///
+    /// This function won't panic.
     fn get_total_time(&self) -> u32 {
         self.normal_proc_user_mode
             + self.nice_proc_user_mode
@@ -41,12 +59,14 @@ impl ProcStatRow {
     }
 }
 
+/// Determines whether the CPU name is parsed or the values of a CPU.
 #[derive(PartialEq)]
 enum ReadingMode {
     CpuName,
     CpuValue,
 }
 
+/// Stores the cpu utilization of a specific cpu (core)
 pub struct CpuUtilization {
     pub cpu_name: String,
     pub utilization: f64,
@@ -58,6 +78,16 @@ impl fmt::Display for CpuUtilization {
     }
 }
 
+/// Calculates and returns the cpu utilization based on two different measured cpu times.
+///
+/// # Arguments
+///
+/// * 'previous' - previous measured cpu time
+/// * 'current' - current measured cpu time
+///
+/// # Panic
+///
+/// This function won't panic.
 fn calculate_cpu_utilization(previous: &ProcStatRow, current: &ProcStatRow) -> f64 {
     let previous_total_elapsed = previous.get_total_time();
     let current_total_elapsed = current.get_total_time();
@@ -68,91 +98,119 @@ fn calculate_cpu_utilization(previous: &ProcStatRow, current: &ProcStatRow) -> f
     utilization
 }
 
+/// Opens and returns a new file handle to the /proc/stat file.
+///
+/// # Panic
+///
+/// This function won't panic.
+fn get_proc_stat_file_handle() -> Option<File> {
+    let file_handle = File::open("/proc/stat");
+
+    let file = match file_handle {
+        Ok(x) => Some(x),
+        Err(_) => None,
+    };
+    file
+}
+
+
+/// Reads and parses the cpu utilization provided by /proc/stat
+///
+/// # Arguments
+///
+/// * 'stats' - queue of cpu stats which should be temporarly saved
+/// * 'iteration_count' - current measured cpu time
+///
+/// # Panic
+///
+/// This function won't panic.
 fn update_current_cpu_utilization(
     stats: &mut VecDeque<ProcStatRow>,
     iteration_count: &u32,
 ) -> Vec<CpuUtilization> {
-    let file_handle = File::open("/proc/stat");
-
-    let file = match file_handle {
-        Ok(x) => x,
-        Err(_) => panic!("Couldn't read stat file"),
-    };
-
-    let reader = BufReader::new(file);
-
-    let mut reading_mode;
-
     let mut result = Vec::<CpuUtilization>::new();
 
-    for line in reader.lines() {
-        let row = match line {
-            Ok(x) => x,
-            Err(_) => break,
-        };
+    // Open file handle and read file if successful
+    // Otherwise return empty vec.
+    if let Some(file) = get_proc_stat_file_handle() {
+        let reader = BufReader::new(file);
 
-        if row.starts_with("cpu") {
-            reading_mode = ReadingMode::CpuName;
+        let mut reading_mode;
 
-            let mut current_cpu_name: &str = "";
-            let mut values: [u32; 10] = [0; 10];
-            let mut field_counter = 0;
+        for line in reader.lines() {
+            let row = match line {
+                Ok(x) => x,
+                Err(_) => break,
+            };
 
-            for z in row.split_whitespace() {
-                match reading_mode {
-                    ReadingMode::CpuName => {
-                        current_cpu_name = z;
-                        reading_mode = ReadingMode::CpuValue;
-                    }
+            // We only care about cpu information, so discard other lines
+            if row.starts_with("cpu") {
+                reading_mode = ReadingMode::CpuName;
 
-                    ReadingMode::CpuValue => {
-                        let number: u32 = match z.trim().parse() {
-                            Err(_) => 0,
-                            Ok(n) => n,
-                        };
+                let mut current_cpu_name: &str = "";
+                let mut values: [u32; 10] = [0; 10];
+                let mut field_counter = 0;
 
-                        values[field_counter] = number;
-                        field_counter += 1;
+                for z in row.split_whitespace() {
+                    match reading_mode {
+                        // Read cpu name from line
+                        ReadingMode::CpuName => {
+                            current_cpu_name = z;
+                            reading_mode = ReadingMode::CpuValue;
+                        }
+
+                        ReadingMode::CpuValue => {
+                            let number: u32 = match z.trim().parse() {
+                                Err(_) => 0,
+                                Ok(n) => n,
+                            };
+
+                            values[field_counter] = number;
+                            field_counter += 1;
+                        }
                     }
                 }
-            }
 
-            let current_stat = ProcStatRow {
-                cpu_name: current_cpu_name.to_string(), // ugly, should find better way
-                softirq: values[6],
-                irq: values[5],
-                iowait: values[4],
-                idle: values[3],
-                system_proc_kernel_mode: values[2],
-                nice_proc_user_mode: values[1],
-                normal_proc_user_mode: values[0],
-            };
-            if *iteration_count > 0 {
-                //println!("{}", current_stat.cpu_name);
-                let previous_stat = match stats.pop_front() {
-                    Some(x) => x,
-                    None => {
-                        break;
-                    }
-                };
-                //println!("{}", previous_stat.cpu_name);
-                /*println!(
-                    "{} Utilization {}%",
-                    current_cpu_name,
-                    calculate_cpu_utilization(&previous_stat, &current_stat)
-                );*/
-                let utilization = CpuUtilization {
+                let current_stat = ProcStatRow {
                     cpu_name: current_cpu_name.to_string(),
-                    utilization: calculate_cpu_utilization(&previous_stat, &current_stat),
+                    softirq: values[6],
+                    irq: values[5],
+                    iowait: values[4],
+                    idle: values[3],
+                    system_proc_kernel_mode: values[2],
+                    nice_proc_user_mode: values[1],
+                    normal_proc_user_mode: values[0],
                 };
-                result.push(utilization);
+                if *iteration_count > 0 {
+                    //println!("{}", current_stat.cpu_name);
+                    let previous_stat = match stats.pop_front() {
+                        Some(x) => x,
+                        None => {
+                            break;
+                        }
+                    };
+
+                    let utilization = CpuUtilization {
+                        cpu_name: current_cpu_name.to_string(),
+                        utilization: calculate_cpu_utilization(&previous_stat, &current_stat),
+                    };
+                    result.push(utilization);
+                }
+                stats.push_back(current_stat);
             }
-            stats.push_back(current_stat);
         }
     }
     result
 }
 
+/// Initializes a thread to collect and send the process list each 0.5 seconds.
+///
+/// Calculates current cpu utilization and sends the result to the receiver
+/// which was originally returned by the function.
+///
+/// # Panic
+///
+/// This function won't panic.
 pub fn init_data_collection_thread() -> mpsc::Receiver<Vec<CpuUtilization>> {
     let (tx, rx) = mpsc::channel();
 
@@ -182,8 +240,12 @@ pub struct CpuWidget {
     dc_thread: mpsc::Receiver<Vec<CpuUtilization>>,
 }
 
-// TODO: simplify code and refactor
 impl CpuWidget {
+    /// Returns a new CpuWidget with default values and a new data thread.
+    ///
+    /// # Panic
+    ///
+    /// This function won't panic.
     pub fn new() -> Self {
         Self {
             core_values: Vec::<Vec<f64>>::new(),
@@ -223,6 +285,19 @@ impl CpuWidget {
         }
     }
 
+    /// Draws cpu utilization graph in a given Rect.
+    ///
+    /// Each cpu cores is rendered in a different color.
+    ///
+    /// # Arguments
+    ///
+    /// * 'f' - A refrence to the terminal interface for rendering
+    /// * 'rect' - A rectangle used to hint the area the widget gets rendered in
+    /// * 'block' - A Box with borders and title which contains the drawn widget
+    ///
+    /// # Panic
+    ///
+    /// This function won't panic.
     pub fn draw<B: Backend>(&self, f: &mut Frame<B>, rect: Rect, block: Block) {
         let mut datasets = Vec::new();
 
@@ -239,21 +314,7 @@ impl CpuWidget {
             }
 
             for i in 0..values.len() {
-                let h = (i * 40) % 360;
-                let mut color = Color::White;
-                if h < 60 {
-                    color = Color::Rgb(255, (h % 255) as u8, 0);
-                } else if h < 120 {
-                    color = Color::Rgb(255 - (h % 255) as u8, 255, 0);
-                } else if h < 180 {
-                    color = Color::Rgb(0, 255, (h % 255) as u8);
-                } else if h < 240 {
-                    color = Color::Rgb(0, 255 - (h % 255) as u8, 255);
-                } else if h < 300 {
-                    color = Color::Rgb((h % 255) as u8, 0, 255);
-                } else if h < 360 {
-                    color = Color::Rgb(255, 0, 255 - (h % 255) as u8);
-                }
+                let color = util::get_color_by_scalar(i);
 
                 datasets.push(
                     Dataset::default()
@@ -281,6 +342,7 @@ impl CpuWidget {
                 .data(&v),
         );
 
+        // Create new chart with datasets
         let chart = Chart::new(datasets)
             .block(block)
             .x_axis(Axis::default().bounds([0.0, 300.0]))
@@ -299,6 +361,7 @@ impl CpuWidget {
 
     pub fn handle_input(&mut self, key: Key) {
         match key {
+            // Show or hide all cores in chart
             Key::Char(' ') => self.show_all_cores = !self.show_all_cores,
             _ => {}
         };

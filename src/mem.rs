@@ -97,6 +97,7 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<MemInfo> {
 }
 
 const SIZES: [&str; 4] = [" KiB", " MiB", " GiB", " TiB"];
+
 /// Calculates the ram size to fit a binary base
 /// 
 /// See https://en.wikipedia.org/wiki/Byte for mor information
@@ -144,7 +145,7 @@ impl MemoryWidget {
     /// 
     /// # Panic
     /// 
-    /// This funxtion won't panic.
+    /// This function won't panic.
     pub fn update(&mut self) {
         // Recv data from the data collector thread
 

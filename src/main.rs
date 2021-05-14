@@ -187,7 +187,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let navigation = app.state == AppState::Navigation;
 
                 // If application is in interaction state, check whether the user wants to
-                // interact with the selected widget. The widget is highlighted if if the user wants to interact with it.
+                // interact with the selected widget. The widget is highlighted if the user wants to interact with it.
                 if !navigation {
                     selected = selected && app.show_selected_widget;
                 }
@@ -337,6 +337,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 }
+
 /// Creates a new empty block which can be populated by a widget.
 /// The border style is dynamically modified based on the selection and navigation state.
 fn create_block(name: &str, selected: bool, navigation: bool) -> Block {
