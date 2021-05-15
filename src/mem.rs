@@ -156,6 +156,7 @@ impl MemoryWidget {
             self.mem_info = mem_info.unwrap();
         }
     }
+
     /// Draws memory information in a given Rect.
     /// 
     /// Checks whether a swap-memory exists or not.
@@ -234,5 +235,6 @@ impl MemoryWidget {
         f.render_widget(gauge_swap, block_chunks[1]);
     }
 
-    pub fn handle_input(&mut self, key: Key) {}
+    // Currently unused
+    pub fn handle_input(&mut self, _key: Key) {}
 }

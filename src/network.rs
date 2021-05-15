@@ -199,6 +199,6 @@ impl NetworkWidget {
         let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
         f.render_widget(paragraph, rect);
     }
-
-    pub fn handle_input(&mut self, key: Key) {}
+    // Currently unused
+    pub fn handle_input(&mut self, _key: Key) {}
 }

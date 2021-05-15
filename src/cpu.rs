@@ -59,13 +59,6 @@ impl ProcStatRow {
     }
 }
 
-/// Determines whether the CPU name is parsed or the values of a CPU.
-#[derive(PartialEq)]
-enum ReadingMode {
-    CpuName,
-    CpuValue,
-}
-
 /// Stores the cpu utilization of a specific cpu (core)
 pub struct CpuUtilization {
     pub cpu_name: String,
@@ -113,20 +106,19 @@ fn get_proc_stat_file_handle() -> Option<File> {
     file
 }
 
-
 /// Reads and parses the cpu utilization provided by /proc/stat
 ///
 /// # Arguments
 ///
 /// * 'stats' - queue of cpu stats which should be temporarly saved
-/// * 'iteration_count' - current measured cpu time
+/// * 'first_iteration' - whether the iteration is the first iteration
 ///
 /// # Panic
 ///
 /// This function won't panic.
 fn update_current_cpu_utilization(
     stats: &mut VecDeque<ProcStatRow>,
-    iteration_count: &u32,
+    first_iteration: &bool,
 ) -> Vec<CpuUtilization> {
     let mut result = Vec::<CpuUtilization>::new();
 
@@ -134,8 +126,6 @@ fn update_current_cpu_utilization(
     // Otherwise return empty vec.
     if let Some(file) = get_proc_stat_file_handle() {
         let reader = BufReader::new(file);
-
-        let mut reading_mode;
 
         for line in reader.lines() {
             let row = match line {
@@ -145,32 +135,29 @@ fn update_current_cpu_utilization(
 
             // We only care about cpu information, so discard other lines
             if row.starts_with("cpu") {
-                reading_mode = ReadingMode::CpuName;
-
-                let mut current_cpu_name: &str = "";
-                let mut values: [u32; 10] = [0; 10];
                 let mut field_counter = 0;
 
-                for z in row.split_whitespace() {
-                    match reading_mode {
-                        // Read cpu name from line
-                        ReadingMode::CpuName => {
-                            current_cpu_name = z;
-                            reading_mode = ReadingMode::CpuValue;
-                        }
+                let mut columns = row.split_whitespace();
+                let current_cpu_name = match columns.next() {
+                    Some(a) => a,
+                    None => continue,  // skip cpu if error
+                };
 
-                        ReadingMode::CpuValue => {
-                            let number: u32 = match z.trim().parse() {
-                                Err(_) => 0,
-                                Ok(n) => n,
-                            };
+                // Store data temporarly into an array
+                let mut values: [u32; 10] = [0; 10];
+                for z in columns {
+                    let number: u32 = match z.trim().parse() {
+                        Err(_) => 0,
+                        Ok(n) => n,
+                    };
 
-                            values[field_counter] = number;
-                            field_counter += 1;
-                        }
-                    }
+                    values[field_counter] = number;
+                    field_counter += 1;
                 }
-
+               
+                // Create a new struct from the saved data
+                // We are storing the complete row data since a new feature may 
+                // needs access to the data.
                 let current_stat = ProcStatRow {
                     cpu_name: current_cpu_name.to_string(),
                     softirq: values[6],
@@ -181,8 +168,9 @@ fn update_current_cpu_utilization(
                     nice_proc_user_mode: values[1],
                     normal_proc_user_mode: values[0],
                 };
-                if *iteration_count > 0 {
-                    //println!("{}", current_stat.cpu_name);
+
+                // If previous data exists, calculate the cpu utilization
+                if !first_iteration {
                     let previous_stat = match stats.pop_front() {
                         Some(x) => x,
                         None => {
@@ -196,6 +184,7 @@ fn update_current_cpu_utilization(
                     };
                     result.push(utilization);
                 }
+                // Save newly read data
                 stats.push_back(current_stat);
             }
         }
@@ -203,10 +192,9 @@ fn update_current_cpu_utilization(
     result
 }
 
-/// Initializes a thread to collect and send the process list each 0.5 seconds.
+/// Initializes a thread to collect and send the cpu utilization each 0.5 seconds.
 ///
-/// Calculates current cpu utilization and sends the result to the receiver
-/// which was originally returned by the function.
+/// Calculates current cpu utilization and sends the result to the receiver.
 ///
 /// # Panic
 ///
@@ -215,26 +203,28 @@ pub fn init_data_collection_thread() -> mpsc::Receiver<Vec<CpuUtilization>> {
     let (tx, rx) = mpsc::channel();
 
     let mut stats: VecDeque<ProcStatRow> = VecDeque::new(); // create with fixed size
-    let mut iteration_count = 0;
+    let mut first_iteration = true;
 
     let dur = time::Duration::from_millis(500);
 
     // Thread for the data collection
     thread::spawn(move || loop {
-        let result = update_current_cpu_utilization(&mut stats, &iteration_count);
+        let result = update_current_cpu_utilization(&mut stats, &first_iteration);
 
         let _ = tx.send(result);
 
         thread::sleep(dur);
 
-        iteration_count += 1;
+        first_iteration = false;
     });
 
     rx
 }
 
 pub struct CpuWidget {
+    // Utilization data of different cores
     core_values: std::vec::Vec<Vec<f64>>,
+    // Aggregated cpu utilization data
     cpu_values: std::vec::Vec<f64>,
     show_all_cores: bool,
     dc_thread: mpsc::Receiver<Vec<CpuUtilization>>,
@@ -255,6 +245,11 @@ impl CpuWidget {
         }
     }
 
+    /// Updates the data which is used by the visualization.
+    ///
+    /// # Panic
+    ///
+    /// This function won't panic.
     pub fn update(&mut self) {
         // Recv data from the data collector thread
         let cpu_stats = match self.dc_thread.try_recv() {
@@ -262,24 +257,32 @@ impl CpuWidget {
             Err(_) => vec![],
         };
 
-        // create cpu info
         let mut counter = 0;
         for b in cpu_stats {
+            // Aggregated cpu utilization value / total cpu utilization
             if b.cpu_name == "cpu" {
+                // If a certain threshold is reached, remove an entry from the beginning
+                // -> keeps the vec at a fixed size
                 if self.cpu_values.len() == 300 {
                     self.cpu_values.remove(0);
                 }
                 self.cpu_values.push(b.utilization);
             } else {
+                // Utilization of cores
+
+                // If a certain threshold is reached, remove an entry from the beginning
+                // -> keeps the vec at a fixed size
                 if self.core_values.len() > counter {
                     if self.core_values[counter].len() == 300 {
                         self.core_values[counter].remove(0);
                     }
                     self.core_values[counter].push(b.utilization);
                 } else {
+                    // Creates new vec if no vec exists for a cpu core
                     self.core_values.push(Vec::new());
                     self.core_values[counter].push(b.utilization);
                 }
+                // Increase counter since the next iteration will be a new cpu core
                 counter += 1
             }
         }
@@ -301,9 +304,12 @@ impl CpuWidget {
     pub fn draw<B: Backend>(&self, f: &mut Frame<B>, rect: Rect, block: Block) {
         let mut datasets = Vec::new();
 
-        let mut values = Vec::new(); //FIXME: ugly should fix
+        // Temporary variable to store dataset data
+        let mut values = Vec::new();
 
+        // Draw all cores
         if self.show_all_cores {
+            // Parse utilization data, so chart can be drawn
             for core in &self.core_values {
                 let value = core
                     .iter()
@@ -313,6 +319,7 @@ impl CpuWidget {
                 values.push(value);
             }
 
+            // Create dataset for each value
             for i in 0..values.len() {
                 let color = util::get_color_by_scalar(i);
 
@@ -327,6 +334,7 @@ impl CpuWidget {
             }
         }
 
+        // Add aggregated cpu utilization
         let v = self
             .cpu_values
             .iter()
@@ -359,6 +367,17 @@ impl CpuWidget {
         f.render_widget(chart, rect);
     }
 
+    /// Handles the input for the widget.
+    ///
+    /// The space bar toggles the show or hide all core feature.
+    ///
+    /// # Arguments
+    ///
+    /// * 'key' - The pressed key. 
+    ///
+    /// # Panic
+    ///
+    /// This function won't panic.
     pub fn handle_input(&mut self, key: Key) {
         match key {
             // Show or hide all cores in chart
