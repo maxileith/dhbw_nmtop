@@ -218,7 +218,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Generate help text which is displayed to user
             let mut help_text =
-                "ESC: navigation/interaction, v:show/hide selected widget".to_string();
+                "ESC: navigation/interaction, CTRL-v:show/hide selected widget".to_string();
 
             if app.show_selected_widget && app.state == AppState::Interaction {
                 // Append help text of current selected widget
@@ -270,7 +270,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     
                     // Global shortcuts
                     match input {
-                        Key::Char('v') => {
+                        Key::Ctrl('v') => {
                             app.show_selected_widget = !app.show_selected_widget;
                         }
                         // Switch between app states
