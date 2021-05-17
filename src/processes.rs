@@ -575,7 +575,7 @@ impl ProcessesWidget {
     }
 
     /// Filters process data by the current selected filter column and the supplied value.
-    fn filter(&self, p: &Process) -> bool {
+    fn filter(&mut self, p: &Process) -> bool {
         match self.filter_index {
             // Numbers
             Some(0) => p.pid == self.filter_value_usize,
@@ -598,7 +598,9 @@ impl ProcessesWidget {
         let processes_info = self.dc_thread.try_recv();
 
         match processes_info {
-            Ok(x) => {
+            Ok(mut x) => {
+                x.processes.retain(|p| self.filter(p));
+
                 if !self.popup_open {
                     self.process_list = x;
                     self.sort();
@@ -635,33 +637,28 @@ impl ProcessesWidget {
         let header = Row::new(header_cells).style(header_style).height(1);
 
         // Populate rows of table
-        let rows = self
-            .process_list
-            .processes
-            .iter()
-            .filter(|p| self.filter(p))
-            .map(|p| {
-                let mut cells = Vec::new();
-                cells.push(Cell::from(format!("{: >7}", p.pid)));
-                cells.push(Cell::from(format!("{: >7}", p.parent_pid)));
-                cells.push(Cell::from(format!("{: >7}", p.tid)));
-                cells.push(Cell::from(p.user.to_string()));
-                cells.push(Cell::from(format!("{: >5}", p.umask)));
-                cells.push(Cell::from(format!("{: >7}", p.threads)));
-                cells.push(Cell::from(p.name.to_string()));
-                cells.push(Cell::from(p.state.to_string()));
-                cells.push(Cell::from(format!("{: >4}", p.nice)));
-                cells.push(Cell::from(format!(
-                    "{: >7}",
-                    format!("{:3.2}%", p.cpu_usage)
-                )));
-                cells.push(Cell::from(format!(
-                    "{: >9}",
-                    util::to_humanreadable(p.memory * 1024)
-                )));
-                cells.push(Cell::from(p.command.to_string()));
-                Row::new(cells).height(1)
-            });
+        let rows = self.process_list.processes.iter().map(|p| {
+            let mut cells = Vec::new();
+            cells.push(Cell::from(format!("{: >7}", p.pid)));
+            cells.push(Cell::from(format!("{: >7}", p.parent_pid)));
+            cells.push(Cell::from(format!("{: >7}", p.tid)));
+            cells.push(Cell::from(p.user.to_string()));
+            cells.push(Cell::from(format!("{: >5}", p.umask)));
+            cells.push(Cell::from(format!("{: >7}", p.threads)));
+            cells.push(Cell::from(p.name.to_string()));
+            cells.push(Cell::from(p.state.to_string()));
+            cells.push(Cell::from(format!("{: >4}", p.nice)));
+            cells.push(Cell::from(format!(
+                "{: >7}",
+                format!("{:3.2}%", p.cpu_usage)
+            )));
+            cells.push(Cell::from(format!(
+                "{: >9}",
+                util::to_humanreadable(p.memory * 1024)
+            )));
+            cells.push(Cell::from(p.command.to_string()));
+            Row::new(cells).height(1)
+        });
 
         // Create new table
         let table = Table::new(rows)
@@ -782,6 +779,8 @@ impl ProcessesWidget {
                     if self.is_usize_column(self.column_index)
                         || self.is_string_column(self.column_index)
                     {
+                        self.item_index = 0;
+                        self.table_state.select(Some(self.item_index));
                         self.input_mode = InputMode::Filter;
                         self.popup_open = !self.popup_open;
                     }
