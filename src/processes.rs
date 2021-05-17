@@ -566,7 +566,6 @@ impl ProcessesWidget {
                 11 => a.command.partial_cmp(&b.command).unwrap_or(Ordering::Equal),
                 _ => Ordering::Equal,
             };
-            
             if sort_descending {
                 Ordering::reverse(s)
             } else {
@@ -617,8 +616,8 @@ impl ProcessesWidget {
             .bg(Color::DarkGray)
             .add_modifier(Modifier::REVERSED);
         let header_style = Style::default().bg(Color::DarkGray).fg(Color::White);
-        
-        // Create new header row in table 
+
+        // Create new header row in table
         let header_cells = [
             "PID", "PPID", "TID", "User", "Umask", "Threads", "Name", "State", "Nice", "CPU",
             "Mem", "CMD",
@@ -691,7 +690,7 @@ impl ProcessesWidget {
         }
     }
 
-    /// Draw popup over the table. 
+    /// Draw popup over the table.
     fn draw_popup<B: Backend>(&mut self, f: &mut Frame<B>, rect: &Rect) {
         // Define postion of popup
         let horizontal = Layout::default()
@@ -749,12 +748,11 @@ impl ProcessesWidget {
         f.render_widget(Clear, clear[1]);
         f.render_widget(paragraph, popup[1]);
     }
-    
     /// Handles keyboard input
     pub fn handle_input(&mut self, key: Key) {
         if !self.popup_open {
             match key {
-                // Navigate by row 
+                // Navigate by row
                 Key::Down => {
                     if self.item_index < self.process_list.processes.len() - 1 {
                         self.item_index += 1;
@@ -781,7 +779,9 @@ impl ProcessesWidget {
                 }
                 // Filter by selected column
                 Key::Char('f') => {
-                    if self.is_usize_column(self.column_index) || self.is_string_column(self.column_index) {
+                    if self.is_usize_column(self.column_index)
+                        || self.is_string_column(self.column_index)
+                    {
                         self.input_mode = InputMode::Filter;
                         self.popup_open = !self.popup_open;
                     }
@@ -792,7 +792,7 @@ impl ProcessesWidget {
                 }
                 // Kill process
                 Key::Char('k') => {
-                    util::kill_process(self.process_list.processes[self.item_index].tid)
+                    util::kill_process(self.process_list.processes[self.item_index].pid)
                 }
                 // Change niceness of process
                 Key::Char('n') => {
@@ -812,7 +812,7 @@ impl ProcessesWidget {
             }
         } else {
             match key {
-                // Clear input buffer 
+                // Clear input buffer
                 Key::Backspace => {
                     self.input.pop();
                 }
@@ -823,7 +823,7 @@ impl ProcessesWidget {
                     // Update niceness
                     if self.input_mode == InputMode::Niceness {
                         util::update_niceness(
-                            self.process_list.processes[self.item_index].tid,
+                            self.process_list.processes[self.item_index].pid,
                             input_value,
                         );
                     } else if self.input_mode == InputMode::Filter {
@@ -874,20 +874,17 @@ impl ProcessesWidget {
             }
         }
     }
-    
     /// Returns whether the column is storing usize data.
-    fn is_usize_column (&self, v: usize) -> bool {
+    fn is_usize_column(&self, v: usize) -> bool {
         v <= 2 || v == 5
-        
     }
 
     /// Returns whether the column is storing string data.
-    fn is_string_column (&self, v: usize) -> bool {
+    fn is_string_column(&self, v: usize) -> bool {
         v == 3 || v == 6 || v == 7 || v == 11 || v == 4
-
     }
 
-    /// Returns dynamic help text based on current widget state. 
+    /// Returns dynamic help text based on current widget state.
     pub fn get_help_text(&self) -> &str {
         let i = self.column_index;
         // If the filter function is active.
