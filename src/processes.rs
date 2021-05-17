@@ -775,7 +775,7 @@ impl ProcessesWidget {
 
                 // Navigate by column
                 Key::Right => {
-                    if self.column_index < 12 {
+                    if self.column_index < 11 {
                         self.column_index += 1;
                     }
                 }
