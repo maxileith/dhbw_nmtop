@@ -610,6 +610,16 @@ impl ProcessesWidget {
         }
     }
 
+    /// Filter the current list, previous removed data may need some time to show up again
+    fn refresh_filter(&mut self) {
+        // Let variable be temporarly owned by function
+        // since rust can't borrow certain members
+        // See https://stackoverflow.com/questions/64921625/closure-requires-unique-access-to-self-but-it-is-already-borrowed
+        let mut processes = std::mem::take(&mut self.process_list.processes);
+        processes.retain(|p| self.filter(p));
+        self.process_list.processes = processes;
+    }
+
     /// Draws the widget using the data stored in the widget.
     pub fn draw<B: Backend>(&mut self, f: &mut Frame<B>, rect: Rect, block: Block) {
         // Create styles
@@ -788,6 +798,7 @@ impl ProcessesWidget {
                 // Reset filter
                 Key::Char('r') => {
                     self.filter_index = None;
+                    self.refresh_filter();
                 }
                 // Kill process
                 Key::Char('k') => {
@@ -843,6 +854,7 @@ impl ProcessesWidget {
                             }
                             None => {}
                         }
+                        self.refresh_filter();
                     }
                     // Clear buffer
                     self.input.clear();
